@@ -17,10 +17,10 @@ RUN npm ci --omit=dev
 
 FROM gcr.io/distroless/nodejs24-debian12:nonroot AS runtime
 ENV NODE_ENV=production
-# OpenTelemetry: the image turns the SDK on; the platform injects where to send it
+# OpenTelemetry: the image turns the SDK on (src/instrumentation.ts); the platform injects where to send it
 # (OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL, OTEL_SERVICE_NAME; make app-new --otlp).
 # Logs go to stdout, which the platform collects, so the SDK does not export them too.
-ENV NODE_OPTIONS="--require @opentelemetry/auto-instrumentations-node/register" \
+ENV NODE_OPTIONS="--import /app/dist/instrumentation.js" \
     OTEL_TRACES_EXPORTER=otlp \
     OTEL_METRICS_EXPORTER=otlp \
     OTEL_LOGS_EXPORTER=none \

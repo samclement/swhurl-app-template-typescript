@@ -1,0 +1,11 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "description": "One PR for all OpenTelemetry packages, which release together.",
+      "matchPackageNames": ["/^@opentelemetry//"],
+      "groupName": "OpenTelemetry"
+    }
+  ]
+}

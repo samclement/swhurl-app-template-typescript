@@ -6,8 +6,8 @@ const logger = pino({
   level: process.env.LOG_LEVEL ?? "info",
 });
 
-const port = Number.parseInt(process.env.PORT ?? "3000", 10);
-const serviceName = process.env.OTEL_SERVICE_NAME ?? "swhurl-platform-typescript-app-example";
+const port = Number.parseInt(process.env.PORT ?? "8080", 10);
+const serviceName = process.env.OTEL_SERVICE_NAME ?? "swhurl-app";
 
 const server = http.createServer((request, response) => {
   const start = Date.now();
@@ -23,7 +23,7 @@ const server = http.createServer((request, response) => {
   }
 
   const body = {
-    message: "hello from swhurl-platform-typescript-app-example",
+    message: `hello from ${serviceName}`,
     service: serviceName,
     path: url.pathname,
     user: typeof user === "string" ? user : null,

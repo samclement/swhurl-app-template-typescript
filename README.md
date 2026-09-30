@@ -1,73 +1,42 @@
-# swhurl-platform TypeScript App Example
+# swhurl app template (TypeScript)
 
-Bare minimum TypeScript HTTP service for the `swhurl-platform` homelab cluster.
+A minimal TypeScript HTTP service that runs on the [swhurl platform](https://github.com/samclement/swhurl-platform) as it is: OpenTelemetry traces and metrics, JSON logs, a health endpoint and an image published to GHCR on every push. Use it as a GitHub template for a new app.
 
-## What It Uses
+## Start a new app
 
-- Node.js built-in HTTP server
-- TypeScript compile step
-- JSON stdout logging with `pino`
-- OpenTelemetry Node auto-instrumentation via `NODE_OPTIONS`
-- OTLP HTTP export to the in-cluster OTel collector
-- Traefik ingress with shared oauth2-proxy middleware
-- cert-manager TLS certificate
+1. **Use this template** on GitHub (top right) and create `<owner>/<app>` (public, so the cluster can pull its image without credentials).
+2. Push to `main` (or run the Container workflow). The run's summary prints the image, for example `ghcr.io/<owner>/<app>:1-a1b2c3d@sha256:…`.
+3. On GitHub, open the repository's package (**Packages** on the right) → **Package settings** → **Change visibility** → Public. New packages start private, and the cluster pulls images anonymously.
+4. In the platform console, **New app** → *Web app from the swhurl template* (the default): the name, the image line from step 2 and who can reach it. Merge the pull request it opens.
 
-## Local Development
+From then on every push to `main` reaches staging on its own: the workflow publishes `<run>-<sha>`, the platform's image automation commits the new tag and digest to the staging instance, and Flux deploys it. Promote to production from the console (**Promote to prod**) or with `make app-promote`. How that works: [deploy a new image](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#deploy-a-new-image).
+
+## The contract with the platform
+
+What the image provides (keep these true, or override them on the platform with `make app-new` flags):
+
+| | Value | Where |
+| --- | --- | --- |
+| Port | `8080` (`PORT`) | `Dockerfile`, `src/server.ts` |
+| Health path | `GET /healthz` returns 200 | `src/server.ts` |
+| User | UID 65532, non-root, read-only root filesystem friendly (writes only to `/tmp`) | distroless `nonroot` base image |
+| OpenTelemetry SDK | Node auto-instrumentation, turned on by `NODE_OPTIONS`; traces and metrics over OTLP, logs not exported (stdout is collected) | `Dockerfile` |
+| Logs | JSON on stdout (`pino`) | `src/server.ts` |
+| Image tags | `<run number>-<short sha>`, never `latest` | `.github/workflows/container.yml` |
+
+What the platform injects (the preset's `--otlp`): `OTEL_EXPORTER_OTLP_ENDPOINT` (the collector on the pod's node), `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` and `OTEL_SERVICE_NAME` (the app name). Nothing in this repository names the cluster; the platform owns the Kubernetes manifests.
+
+Sign-in happens before requests reach the app; it can read the user from `X-Auth-Request-Email`, `X-Auth-Request-User` and `X-Auth-Request-Preferred-Username`.
+
+## Local development
 
 ```bash
 npm install
-npm run dev
-curl http://localhost:3000
-curl http://localhost:3000/healthz
+npm run dev                             # the SDK stays off locally (the image turns it on)
+curl http://localhost:8080/healthz
+npm run check                           # type-check, as CI does
 ```
 
-## Build
+To see telemetry locally, run an OpenTelemetry collector on `localhost:4318` and start with `NODE_OPTIONS="--require @opentelemetry/auto-instrumentations-node/register" npm run dev`.
 
-```bash
-npm run build
-npm start
-```
-
-## Container
-
-```bash
-docker build -t ghcr.io/samclement/swhurl-platform-typescript-app-example:latest .
-```
-
-GitHub Actions builds and pushes images to GHCR on pushes to `main`:
-
-- `ghcr.io/samclement/swhurl-platform-typescript-app-example:<full-commit-sha>`
-- `ghcr.io/samclement/swhurl-platform-typescript-app-example:<12-char-commit-sha>`
-
-## Platform Runtime Contract
-
-The Kubernetes manifests set:
-
-- `NODE_OPTIONS=--require @opentelemetry/auto-instrumentations-node/register`
-- `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-k8s-cluster-opentelemetry-collector.logging.svc.cluster.local:4318`
-- `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`
-- `OTEL_TRACES_EXPORTER=otlp`
-- `OTEL_METRICS_EXPORTER=otlp`
-
-Application logs go to stdout as JSON. The platform OTel daemonset collects container logs and exports them to ClickStack.
-
-OAuth is handled at the edge by Traefik and oauth2-proxy. The app can read identity from forwarded headers:
-
-- `X-Auth-Request-User`
-- `X-Auth-Request-Email`
-- `X-Auth-Request-Preferred-Username`
-- `Authorization`
-
-## Render Manifests
-
-```bash
-kubectl kustomize k8s/overlays/staging
-kubectl kustomize k8s/overlays/prod
-```
-
-## Deploy Shape
-
-To make this app Flux-managed by `swhurl-platform`, add a Flux Kustomization in that repo that points at this repository and one of:
-
-- `./k8s/overlays/staging`
-- `./k8s/overlays/prod`
+Dependencies are updated by Renovate pull requests in this repository (the Renovate GitHub App needs access to it).

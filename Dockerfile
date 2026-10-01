@@ -20,7 +20,7 @@ ENV NODE_ENV=production
 # OpenTelemetry: the image turns the SDK on (src/instrumentation.ts); the platform injects where to send it
 # (OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL, OTEL_SERVICE_NAME; make app-new --otlp).
 # Logs go to stdout, which the platform collects, so the SDK does not export them too.
-ENV NODE_OPTIONS="--import /app/dist/instrumentation.js" \
+ENV NODE_OPTIONS="--import /app/dist/missing.js" \
     OTEL_TRACES_EXPORTER=otlp \
     OTEL_METRICS_EXPORTER=otlp \
     OTEL_LOGS_EXPORTER=none \

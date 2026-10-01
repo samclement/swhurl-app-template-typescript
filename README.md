@@ -35,8 +35,23 @@ npm install
 npm run dev                             # the SDK stays off locally (the image turns it on)
 curl http://localhost:8080/healthz
 npm run check                           # type-check, as CI does
+npm run build && npm test               # the tests run against the built server
 ```
 
 To see telemetry locally, `npm run build`, then `OTEL_TRACES_EXPORTER=console node --import ./dist/instrumentation.js dist/server.js` prints spans (or run an OpenTelemetry collector on `localhost:4318` and drop the variable).
 
-Dependencies are updated by Renovate pull requests in this repository (the Renovate GitHub App needs access to it).
+## Checks and dependency updates
+
+Every pull request and every push to `main` runs the same checks (`.github/workflows/container.yml`): type-check, `npm test`, an image build, and a smoke test that starts the image the way the cluster does (read-only root filesystem, only `/tmp` writable) and expects `/healthz` to answer and the process to stay up. Only `main` pushes the image.
+
+[Renovate](https://docs.renovatebot.com/) opens the update pull requests. `renovate.json` extends the template's shared [`renovate-preset.json`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/renovate-preset.json), so rule changes there reach every app:
+
+| Update | What happens |
+| --- | --- |
+| Minor, patch, digest | Merges itself once every check passes; the merge publishes an image, which deploys to staging. Promote to production as usual |
+| Major | Waits for you to review and merge |
+| OpenTelemetry packages | One grouped pull request |
+
+**Keep a test.** `test/healthz.test.mjs` is the minimum; add tests for what the app does. An app without tests should not merge updates unchecked: set `"automerge": false` in its `renovate.json`, so updates wait for you, and check staging before promoting.
+
+Renovate runs here because the Renovate GitHub App is installed for all repositories with a config file required; a new repository from this template is picked up on its next run, with no onboarding pull request. The Dependency Dashboard issue lists pending updates.

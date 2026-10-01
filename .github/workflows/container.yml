@@ -1,13 +1,15 @@
 name: Container
 
-# Type-check, build and push the image to GHCR tagged <run number>-<short sha> (for example
-# 42-a1b2c3d). The platform's image automation deploys the highest run number to staging for
-# instances created with make app-new --preset; the job summary prints the image with its digest,
-# which is what New app (or a hand-edited pin) needs.
+# Every pull request (Renovate's included) and every push to main: type-check, test, build the
+# image and smoke-test it (it starts, answers /healthz and keeps running). On main the image is
+# then pushed to GHCR tagged <run number>-<short sha> (for example 42-a1b2c3d); the platform's
+# image automation deploys the highest run number to staging, and the job summary prints the
+# image with its digest for a new instance (the console's New app Image field).
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -15,8 +17,8 @@ permissions:
   packages: write
 
 jobs:
-  build-and-push:
-    name: Build and push image
+  build:
+    name: Check, build and smoke-test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,10 +30,12 @@ jobs:
           node-version: '24'
           cache: npm
 
-      - name: Type-check
+      - name: Type-check, build and test
         run: |
           npm ci
           npm run check
+          npm run build
+          npm test --if-present
 
       - name: Image name and tag
         id: meta
@@ -39,32 +43,59 @@ jobs:
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           echo "tag=${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build the image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: app:smoke
+          cache-to: type=gha,mode=max
+          cache-from: type=gha
+
+      - name: Smoke test (starts, answers /healthz, keeps running)
+        run: |
+          set -Eeuo pipefail
+          docker run -d --name smoke -p 18080:8080 --read-only --tmpfs /tmp app:smoke
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:18080/healthz && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18080/healthz >/dev/null || { docker logs smoke; exit 1; }
+          sleep 10
+          [ "$(docker inspect -f '{{.State.Running}}' smoke)" = true ] || { docker logs smoke; exit 1; }
+          echo "smoke test passed"
+
       - name: Login to GHCR
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build and push
-        id: build
+      - name: Push the image
+        if: github.event_name != 'pull_request'
+        id: push
         uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
 
       - name: Record the image
+        if: github.event_name != 'pull_request'
         run: |
           {
             echo "### Published"
             echo
             echo '```'
-            echo "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}@${{ steps.build.outputs.digest }}"
+            echo "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}@${{ steps.push.outputs.digest }}"
             echo '```'
             echo
             echo "Staging instances created with the swhurl presets deploy this automatically. For a new"

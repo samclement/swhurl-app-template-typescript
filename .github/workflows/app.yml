@@ -7,9 +7,17 @@ name: App
 # image and smoke-test it (it starts, answers /healthz and keeps running). Pushes to main then push
 # the image to GHCR tagged <run number>-<short sha> (for example 42-a1b2c3d); the platform's image
 # automation deploys the highest run number to staging, and the job summary prints image@digest.
+# The template's own Template workflow calls it with template: true: it renders the template with
+# Copier into ./app (as the platform's make app-repo does), checks and smoke-tests that, and publishes
+# nothing.
 
 on:
   workflow_call:
+    inputs:
+      template:
+        description: Render the Copier template into ./app and check that instead (publishes nothing)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -19,15 +27,33 @@ jobs:
   build:
     name: Check, build and smoke-test
     runs-on: ubuntu-latest
+    env:
+      APP_DIR: ${{ inputs.template && 'app' || '.' }}
+      PUBLISH: ${{ !inputs.template && github.event_name != 'pull_request' }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.template && 'app' || '.' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Setup uv (template only)
+        if: inputs.template
+        uses: astral-sh/setup-uv@v6
+
+      - name: Render the template (template only)
+        if: inputs.template
+        working-directory: .
+        run: |
+          uvx copier@9.18.2 copy --defaults --vcs-ref HEAD --data app_name=smoke-app . app
+          test -f app/.copier-answers.yml && test -f app/swhurl.yaml && grep -q '^# smoke-app$' app/README.md
 
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
+          cache-dependency-path: ${{ env.APP_DIR }}/package-lock.json
 
       - name: Type-check, build and test
         run: |
@@ -48,7 +74,7 @@ jobs:
       - name: Build the image
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ env.APP_DIR }}
           platforms: linux/amd64
           load: true
           tags: app:smoke
@@ -69,7 +95,7 @@ jobs:
           echo "smoke test passed"
 
       - name: Login to GHCR
-        if: github.event_name != 'pull_request'
+        if: env.PUBLISH == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -77,18 +103,18 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push the image
-        if: github.event_name != 'pull_request'
+        if: env.PUBLISH == 'true'
         id: push
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ env.APP_DIR }}
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
           cache-from: type=gha
 
       - name: Record the image
-        if: github.event_name != 'pull_request'
+        if: env.PUBLISH == 'true'
         run: |
           {
             echo "### Published"

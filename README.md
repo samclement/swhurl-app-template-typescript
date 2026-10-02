@@ -13,7 +13,9 @@ From then on every push to `main` reaches staging on its own: the workflow publi
 
 ## The contract with the platform
 
-What the image provides (keep these true, or override them on the platform with `make app-new` flags):
+[`swhurl.yaml`](swhurl.yaml) tells the platform what this app needs: the kind, port, health path, user, telemetry and, when used, a database and secret names. The platform's `make app-new --from-repo <owner>/<app>` reads it, so keep it true when you change any of these; its fields are listed in the platform's [apps guide](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#swhurlyaml).
+
+What the image provides (keep these true, and update `swhurl.yaml` with them):
 
 | | Value | Where |
 | --- | --- | --- |

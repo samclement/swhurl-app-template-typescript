@@ -1,0 +1,10 @@
+# What this app needs from the swhurl platform. Read by the platform's `make app-new --from-repo`;
+# fields: https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#swhurlyaml
+version: 1
+stack: typescript
+kind: web
+port: 8080
+healthPath: /healthz
+uid: 65532
+telemetry: otlp
+autoDeploy: true

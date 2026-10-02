@@ -1,0 +1,20 @@
+name: Template
+
+# Renders the template (as `make app-repo` does) and runs the shared app checks on the result:
+# type-check, tests, image build and smoke test. Nothing is published.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  app:
+    uses: ./.github/workflows/app.yml
+    with:
+      template: true

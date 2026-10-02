@@ -4,12 +4,22 @@ A minimal TypeScript HTTP service that runs on the [swhurl platform](https://git
 
 ## Start a new app
 
-1. **Use this template** on GitHub (top right) and create `<owner>/<app>` (public, so the cluster can pull its image without credentials).
-2. Push to `main` (or run the Container workflow). The run's summary prints the image, for example `ghcr.io/<owner>/<app>:1-a1b2c3d@sha256:…`.
-3. The cluster pulls images anonymously, so the package must be public. A package published from a public repository has been public so far (checked 30 September 2026); if the pod reports an image pull error, open the repository's package (**Packages** on the right) → **Package settings** → **Change visibility** → Public.
-4. In the platform console, **New app** → *Web app from the swhurl template* (the default): the name, the image line from step 2 and who can reach it. Merge the pull request it opens.
+From a checkout of the [platform](https://github.com/samclement/swhurl-platform):
 
-From then on every push to `main` reaches staging on its own: the workflow publishes `<run>-<sha>`, the platform's image automation commits the new tag and digest to the staging instance, and Flux deploys it. Promote to production from the console (**Promote to prod**) or with `make app-promote`. How that works: [deploy a new image](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#deploy-a-new-image).
+```bash
+make app-repo NAME=<app>     # renders this template, creates the public repository samclement/<app>,
+                             # pushes it and waits for its first image; prints the next command
+```
+
+It prints the `make app-new … --from-repo` line that adds the app to staging ([apps guide](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#start-from-the-template)). From then on every push to `main` reaches staging on its own: the workflow publishes `<run>-<sha>`, the platform's image automation commits the new tag and digest to the staging instance, and Flux deploys it. Promote to production from the console (**Promote to prod**) or with `make app-promote`.
+
+The cluster pulls images anonymously, so the package must be public. A package published from a public repository has been public so far (checked 30 September 2026); if the pod reports an image pull error, open the repository's package (**Packages** on the right) → **Package settings** → **Change visibility** → Public.
+
+## How this repository is laid out
+
+This is a [Copier](https://copier.readthedocs.io/) template: `template/` is the app (a working TypeScript service you can run as it is), [`copier.yml`](copier.yml) asks for the app's name and description, and `README.md.jinja` and the answers file are the only rendered files. Each app keeps `.copier-answers.yml`, so later template changes can reach it with `copier update`. By hand: `uvx copier copy --data app_name=<app> gh:samclement/swhurl-app-template-typescript <dir>`.
+
+Shared by every app and kept at the top level: [`.github/workflows/app.yml`](.github/workflows/app.yml), the checks and image build each app's `container.yml` calls, and [`renovate-preset.json`](renovate-preset.json). The **Template** workflow renders the template and runs `app.yml` on the result for every pull request, so a change here is proven on a fresh app before it reaches any.
 
 ## The contract with the platform
 
@@ -32,6 +42,8 @@ Sign-in happens before requests reach the app; it can read the user from `X-Auth
 
 ## Local development
 
+In `template/` (or in an app made from it):
+
 ```bash
 npm install
 npm run dev                             # the SDK stays off locally (the image turns it on)
@@ -44,7 +56,7 @@ To see telemetry locally, `npm run build`, then `OTEL_TRACES_EXPORTER=console no
 
 ## Checks and dependency updates
 
-Every pull request and every push to `main` runs the same checks, from the workflow shared by every app: `.github/workflows/container.yml` calls the template's [`app.yml`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/.github/workflows/app.yml), so fixes to the checks reach this repository without editing it (keep `container.yml` as it is). The checks: type-check, `npm test`, an image build, and a smoke test that starts the image the way the cluster does (read-only root filesystem, only `/tmp` writable) and expects `/healthz` to answer and the process to stay up. Only `main` pushes the image.
+Every pull request and every push to `main` of an app runs the same checks, from the workflow shared by every app: its `.github/workflows/container.yml` calls the template's [`app.yml`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/.github/workflows/app.yml), so fixes to the checks reach this repository without editing it (keep `container.yml` as it is). The checks: type-check, `npm test`, an image build, and a smoke test that starts the image the way the cluster does (read-only root filesystem, only `/tmp` writable) and expects `/healthz` to answer and the process to stay up. Only `main` pushes the image.
 
 [Renovate](https://docs.renovatebot.com/) opens the update pull requests. `renovate.json` extends the template's shared [`renovate-preset.json`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/renovate-preset.json), so rule changes there reach every app:
 
@@ -56,4 +68,4 @@ Every pull request and every push to `main` runs the same checks, from the workf
 
 **Keep a test.** `test/healthz.test.mjs` is the minimum; add tests for what the app does. An app without tests should not merge updates unchecked: set `"automerge": false` in its `renovate.json`, so updates wait for you, and check staging before promoting.
 
-Renovate runs here because the Renovate GitHub App is installed for all repositories with a config file required; a new repository from this template is picked up on its next run, with no onboarding pull request. The Dependency Dashboard issue lists pending updates.
+Renovate runs here because the Renovate GitHub App is installed for all repositories with a config file required; a new app repository is picked up on its next run, with no onboarding pull request. The Dependency Dashboard issue lists pending updates.

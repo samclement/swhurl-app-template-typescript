@@ -2,9 +2,14 @@
 # fields: https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#swhurlyaml
 version: 1
 stack: typescript
-kind: web
+kind: {{ kind }}
+{%- if kind == 'web' %}
 port: 8080
 healthPath: /healthz
+{%- endif %}
 uid: 65532
 telemetry: otlp
 autoDeploy: true
+{%- if database == 'sqlite' %}
+database: sqlite
+{%- endif %}

@@ -18,6 +18,10 @@ on:
         description: Render the Copier template into ./app and check that instead (publishes nothing)
         type: boolean
         default: false
+      answers:
+        description: "With template: Copier answers, space-separated key=value (for example kind=worker database=sqlite)"
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -46,9 +50,14 @@ jobs:
       - name: Render the template (template only)
         if: inputs.template
         working-directory: .
+        env:
+          ANSWERS: ${{ inputs.answers }}
         run: |
-          uvx copier@9.18.2 copy --defaults --vcs-ref HEAD --data app_name=smoke-app . app
+          data=()
+          for answer in $ANSWERS; do data+=(--data "$answer"); done
+          uvx copier@9.18.2 copy --defaults --vcs-ref HEAD --data app_name=smoke-app "${data[@]}" . app
           test -f app/.copier-answers.yml && test -f app/swhurl.yaml && grep -q '^# smoke-app$' app/README.md
+          cat app/swhurl.yaml
 
       - name: Setup Node
         uses: actions/setup-node@v7
@@ -83,18 +92,30 @@ jobs:
           cache-to: type=gha,mode=max
           cache-from: type=gha
 
-      - name: Smoke test (starts, answers /healthz, keeps running)
+      # Runs the image as the cluster does, from the app's swhurl.yaml (a web app on /healthz without one):
+      # read-only root filesystem with a writable /tmp, the database (if any) on a writable /data. A web app
+      # must answer its health path and /; every app must keep running.
+      - name: Smoke test (starts, answers its health path if web, keeps running)
         run: |
           set -Eeuo pipefail
-          docker run -d --name smoke -p 18080:8080 --read-only --tmpfs /tmp app:smoke
-          for _ in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:18080/healthz && break
-            sleep 1
-          done
-          curl -fsS http://127.0.0.1:18080/healthz >/dev/null || { docker logs smoke; exit 1; }
+          field() { if [ -f swhurl.yaml ]; then sed -n "s/^$1: *//p" swhurl.yaml | head -1; fi; }
+          kind=$(field kind); kind=${kind:-web}; database=$(field database)
+          args=(--read-only --tmpfs /tmp)
+          if [ "$database" = sqlite ]; then args+=(--tmpfs /data:mode=1777 -e DATABASE_PATH=/data/app.db); fi
+          if [ "$kind" = web ]; then args+=(-p 18080:8080); fi
+          docker run -d --name smoke "${args[@]}" app:smoke
+          if [ "$kind" = web ]; then
+            path=$(field healthPath); path=${path:-/healthz}
+            for _ in $(seq 1 30); do
+              curl -fsS "http://127.0.0.1:18080$path" && break
+              sleep 1
+            done
+            curl -fsS "http://127.0.0.1:18080$path" >/dev/null || { docker logs smoke; exit 1; }
+            curl -fsS http://127.0.0.1:18080/ >/dev/null || { docker logs smoke; exit 1; }
+          fi
           sleep 10
           [ "$(docker inspect -f '{{.State.Running}}' smoke)" = true ] || { docker logs smoke; exit 1; }
-          echo "smoke test passed"
+          echo "smoke test passed ($kind${database:+, $database})"
 
       - name: Login to GHCR
         if: env.PUBLISH == 'true'

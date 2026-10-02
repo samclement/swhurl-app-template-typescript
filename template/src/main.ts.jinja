@@ -1,0 +1,2 @@
+// The entry point: {% if kind == 'web' %}an HTTP service (server.ts){% else %}a background worker (worker.ts){% endif %}.
+import "./{{ 'server' if kind == 'web' else 'worker' }}.js";

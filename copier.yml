@@ -17,3 +17,19 @@ description:
   type: str
   help: One line saying what the app does
   default: A swhurl app
+
+kind:
+  type: str
+  help: "web: an HTTP service with a health endpoint; worker: a background process with no web address"
+  choices:
+    web: web
+    worker: worker
+  default: web
+
+database:
+  type: str
+  help: "sqlite: a database file the platform keeps on a volume, backed up nightly, with migrations at startup"
+  choices:
+    none: none
+    sqlite: sqlite
+  default: none

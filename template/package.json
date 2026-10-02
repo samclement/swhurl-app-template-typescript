@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/server.ts",
-    "start": "node dist/server.js",
+    "dev": "tsx src/main.ts",
+    "start": "node dist/main.js",
     "check": "tsc --noEmit",
     "test": "node --test \"test/**/*.test.mjs\""
   },

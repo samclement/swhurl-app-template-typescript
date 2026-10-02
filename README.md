@@ -17,9 +17,16 @@ The cluster pulls images anonymously, so the package must be public. A package p
 
 ## How this repository is laid out
 
-This is a [Copier](https://copier.readthedocs.io/) template: `template/` is the app (a working TypeScript service you can run as it is), [`copier.yml`](copier.yml) asks for the app's name and description, and `README.md.jinja` and the answers file are the only rendered files. Each app keeps `.copier-answers.yml`, so later template changes can reach it with `copier update`. By hand: `uvx copier copy --data app_name=<app> gh:samclement/swhurl-app-template-typescript <dir>`.
+This is a [Copier](https://copier.readthedocs.io/) template: `template/` is the app, and [`copier.yml`](copier.yml) asks for its name, description and features:
 
-Shared by every app and kept at the top level: [`.github/workflows/app.yml`](.github/workflows/app.yml), the checks and image build each app's `container.yml` calls, and [`renovate-preset.json`](renovate-preset.json). The **Template** workflow renders the template and runs `app.yml` on the result for every pull request, so a change here is proven on a fresh app before it reaches any.
+| Question | Choices | What it adds |
+| --- | --- | --- |
+| `kind` | `web` (default), `worker` | `web`: an HTTP service on 8080 with `GET /healthz` (`src/server.ts`). `worker`: a background process with no web address that does one unit of work every `WORK_INTERVAL_MS` (default a minute; `src/worker.ts`); the platform makes it private |
+| `database` | `none` (default), `sqlite` | A SQLite database at `DATABASE_PATH`, on a volume the platform keeps and backs up nightly (`src/db.ts`), with migrations in `migrations/NNN_name.sql` applied once each at startup. Uses Node's built-in `node:sqlite` (no native module; Node still marks it experimental, and the image silences that one warning). The web example counts visits, the worker example records its runs |
+
+Files and lines that depend on an answer are Jinja: a file named `{% if kind == 'web' %}server.ts{% endif %}` exists only for that answer, and `*.jinja` files are rendered. `swhurl.yaml` follows the answers, so the platform gives a worker no route and a database app its volume. Each app keeps `.copier-answers.yml`, so later template changes can reach it with `copier update`. By hand: `uvx copier copy --data app_name=<app> --data kind=worker --data database=sqlite gh:samclement/swhurl-app-template-typescript <dir>`. A new question needs a line in the Template workflow's matrix.
+
+Shared by every app and kept at the top level: [`.github/workflows/app.yml`](.github/workflows/app.yml), the checks and image build each app's `container.yml` calls, and [`renovate-preset.json`](renovate-preset.json). The **Template** workflow renders the template once per combination of answers and runs `app.yml` on each result for every pull request, so a change here is proven on fresh apps before it reaches any.
 
 ## The contract with the platform
 
@@ -29,11 +36,12 @@ What the image provides (keep these true, and update `swhurl.yaml` with them):
 
 | | Value | Where |
 | --- | --- | --- |
-| Port | `8080` (`PORT`) | `Dockerfile`, `src/server.ts` |
-| Health path | `GET /healthz` returns 200 | `src/server.ts` |
+| Port (web) | `8080` (`PORT`) | `Dockerfile`, `src/server.ts` |
+| Health path (web) | `GET /healthz` returns 200 (with a database, only once it answers) | `src/server.ts` |
+| Database (`sqlite`) | the file at `DATABASE_PATH`; one copy runs at a time, so no locking between replicas | `src/db.ts` |
 | User | UID 65532, non-root, read-only root filesystem friendly (writes only to `/tmp`) | distroless `nonroot` base image |
 | OpenTelemetry SDK | Node auto-instrumentation, loaded before the app by `NODE_OPTIONS=--import /app/dist/instrumentation.js` (it registers the ES-module hook, without which HTTP is not traced); traces and metrics over OTLP, logs not exported (stdout is collected) | `src/instrumentation.ts`, `Dockerfile` |
-| Logs | JSON on stdout (`pino`) | `src/server.ts` |
+| Logs | JSON on stdout (`pino`) | `src/server.ts`, `src/worker.ts` |
 | Image tags | `<run number>-<short sha>`, never `latest` | the shared [`app.yml`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/.github/workflows/app.yml) |
 
 What the platform injects (the preset's `--otlp`): `OTEL_EXPORTER_OTLP_ENDPOINT` (the collector on the pod's node), `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` and `OTEL_SERVICE_NAME` (the app name). Nothing in this repository names the cluster; the platform owns the Kubernetes manifests.
@@ -42,21 +50,22 @@ Sign-in happens before requests reach the app; it can read the user from `X-Auth
 
 ## Local development
 
-In `template/` (or in an app made from it):
+Render an app first (`template/` holds Jinja files, so it does not build as it is), then in it:
 
 ```bash
+uvx copier copy --vcs-ref HEAD --data app_name=try-it . /tmp/try-it && cd /tmp/try-it
 npm install
 npm run dev                             # the SDK stays off locally (the image turns it on)
-curl http://localhost:8080/healthz
+curl http://localhost:8080/healthz      # web
 npm run check                           # type-check, as CI does
-npm run build && npm test               # the tests run against the built server
+npm run build && npm test               # the tests run against the built app
 ```
 
-To see telemetry locally, `npm run build`, then `OTEL_TRACES_EXPORTER=console node --import ./dist/instrumentation.js dist/server.js` prints spans (or run an OpenTelemetry collector on `localhost:4318` and drop the variable).
+To see telemetry locally, `npm run build`, then `OTEL_TRACES_EXPORTER=console node --import ./dist/instrumentation.js dist/main.js` prints spans (or run an OpenTelemetry collector on `localhost:4318` and drop the variable).
 
 ## Checks and dependency updates
 
-Every pull request and every push to `main` of an app runs the same checks, from the workflow shared by every app: its `.github/workflows/container.yml` calls the template's [`app.yml`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/.github/workflows/app.yml), so fixes to the checks reach this repository without editing it (keep `container.yml` as it is). The checks: type-check, `npm test`, an image build, and a smoke test that starts the image the way the cluster does (read-only root filesystem, only `/tmp` writable) and expects `/healthz` to answer and the process to stay up. Only `main` pushes the image.
+Every pull request and every push to `main` of an app runs the same checks, from the workflow shared by every app: its `.github/workflows/container.yml` calls the template's [`app.yml`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/.github/workflows/app.yml), so fixes to the checks reach this repository without editing it (keep `container.yml` as it is). The checks: type-check, `npm test`, an image build, and a smoke test that starts the image the way the cluster does (read-only root filesystem, only `/tmp` writable, and `/data` with a database), read from the app's `swhurl.yaml`: a web app must answer its health path and `/`, and every app must stay up. Only `main` pushes the image.
 
 [Renovate](https://docs.renovatebot.com/) opens the update pull requests. `renovate.json` extends the template's shared [`renovate-preset.json`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/renovate-preset.json), so rule changes there reach every app:
 

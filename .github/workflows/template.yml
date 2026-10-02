@@ -1,7 +1,7 @@
 name: Template
 
-# Renders the template (as `make app-repo` does) and runs the shared app checks on the result:
-# type-check, tests, image build and smoke test. Nothing is published.
+# Renders the template (as `make app-repo` does) once per combination of its questions and runs the
+# shared app checks on each result: type-check, tests, image build and smoke test. Nothing is published.
 
 on:
   push:
@@ -15,6 +15,17 @@ permissions:
 
 jobs:
   app:
+    name: ${{ matrix.answers }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every combination of the template's questions (copier.yml); add a line when a question is added.
+        answers:
+          - kind=web database=none
+          - kind=web database=sqlite
+          - kind=worker database=none
+          - kind=worker database=sqlite
     uses: ./.github/workflows/app.yml
     with:
       template: true
+      answers: ${{ matrix.answers }}

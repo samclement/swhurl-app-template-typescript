@@ -4,14 +4,14 @@ A minimal TypeScript HTTP service that runs on the [swhurl platform](https://git
 
 ## Start a new app
 
-From a checkout of the [platform](https://github.com/samclement/swhurl-platform):
+In the platform console, **New app** → stack **typescript**, or from a checkout of the [platform](https://github.com/samclement/swhurl-platform):
 
 ```bash
-make app-repo NAME=<app>     # renders this template, creates the public repository samclement/<app>,
-                             # pushes it and waits for its first image; prints the next command
+make app-repo NAME=<app> ANSWERS="kind=web database=sqlite"   # creates samclement/<app>, waits for its first image,
+                                                               # prints the make app-new line that adds it to staging
 ```
 
-It prints the `make app-new … --from-repo` line that adds the app to staging ([apps guide](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#start-from-the-template)). From then on every push to `main` reaches staging on its own: the workflow publishes `<run>-<sha>`, the platform's image automation commits the new tag and digest to the staging instance, and Flux deploys it. Promote to production from the console (**Promote to prod**) or with `make app-promote`.
+Either way you get the public repository `samclement/<app>` and, once its pull request is merged, a staging instance ([start a new app](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#start-a-new-app)). From then on every push to `main` reaches staging on its own: the workflow publishes `<run>-<sha>`, the platform's image automation commits the new tag and digest to the staging instance, and Flux deploys it. Promote to production from the console (**Promote to prod**) or with `make app-promote`.
 
 The cluster pulls images anonymously, so the package must be public. A package published from a public repository has been public so far (checked 30 September 2026); if the pod reports an image pull error, open the repository's package (**Packages** on the right) → **Package settings** → **Change visibility** → Public.
 

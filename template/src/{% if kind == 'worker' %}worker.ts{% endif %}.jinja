@@ -1,0 +1,50 @@
+import { trace } from "@opentelemetry/api";
+import pino from "pino";
+{%- if database == 'sqlite' %}
+import { openDatabase } from "./db.js";
+{%- endif %}
+
+// A background worker: no web address. It does one unit of work every WORK_INTERVAL_MS
+// (default a minute); replace work() with the app's job. The platform restarts it if it exits.
+const logger = pino({
+  level: process.env.LOG_LEVEL ?? "info",
+});
+
+const serviceName = process.env.OTEL_SERVICE_NAME ?? "swhurl-app";
+const intervalMs = Number.parseInt(process.env.WORK_INTERVAL_MS ?? "60000", 10);
+const tracer = trace.getTracer(serviceName);
+{%- if database == 'sqlite' %}
+// DATABASE_PATH comes from the platform (a file on a volume that outlives the pod); app.db locally.
+const db = openDatabase();
+const recordRun = db.prepare("INSERT INTO events (kind, detail, at) VALUES ('run', ?, ?)");
+{%- endif %}
+
+async function work(): Promise<void> {
+  await tracer.startActiveSpan("work", async (span) => {
+    try {
+{%- if database == 'sqlite' %}
+      recordRun.run(serviceName, new Date().toISOString());
+{%- endif %}
+      logger.info({ trace_id: span.spanContext().traceId }, "work done");
+    } catch (error) {
+      logger.error({ err: error }, "work failed");
+      span.recordException(error as Error);
+    } finally {
+      span.end();
+    }
+  });
+}
+
+const timer = setInterval(() => void work(), intervalMs);
+void work();
+logger.info({ service: serviceName, interval_ms: intervalMs }, "worker started");
+
+// Kubernetes sends SIGTERM before stopping the pod.
+process.on("SIGTERM", () => {
+  clearInterval(timer);
+{%- if database == 'sqlite' %}
+  db.close();
+{%- endif %}
+  logger.info("worker stopping");
+  process.exit(0);
+});

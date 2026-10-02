@@ -1,6 +1,9 @@
 import http from "node:http";
 import { trace } from "@opentelemetry/api";
 import pino from "pino";
+{%- if database == 'sqlite' %}
+import { openDatabase } from "./db.js";
+{%- endif %}
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? "info",
@@ -8,6 +11,12 @@ const logger = pino({
 
 const port = Number.parseInt(process.env.PORT ?? "8080", 10);
 const serviceName = process.env.OTEL_SERVICE_NAME ?? "swhurl-app";
+{%- if database == 'sqlite' %}
+// DATABASE_PATH comes from the platform (a file on a volume that outlives the pod); app.db locally.
+const db = openDatabase();
+const recordVisit = db.prepare("INSERT INTO events (kind, detail, at) VALUES ('visit', ?, ?)");
+const countVisits = db.prepare("SELECT count(*) AS n FROM events WHERE kind = 'visit'");
+{%- endif %}
 
 const server = http.createServer((request, response) => {
   const start = Date.now();
@@ -17,10 +26,18 @@ const server = http.createServer((request, response) => {
   const span = trace.getActiveSpan();
 
   if (url.pathname === "/healthz") {
+{%- if database == 'sqlite' %}
+    db.prepare("SELECT 1").get(); // ready only when the database answers
+{%- endif %}
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ ok: true }));
     return;
   }
+{%- if database == 'sqlite' %}
+
+  recordVisit.run(url.pathname, new Date().toISOString());
+  const visits = Number((countVisits.get() as { n: number }).n);
+{%- endif %}
 
   const body = {
     message: `hello from ${serviceName}`,
@@ -28,6 +45,9 @@ const server = http.createServer((request, response) => {
     path: url.pathname,
     user: typeof user === "string" ? user : null,
     email: typeof email === "string" ? email : null,
+{%- if database == 'sqlite' %}
+    visits,
+{%- endif %}
     traceId: span?.spanContext().traceId ?? null,
   };
 
@@ -49,3 +69,12 @@ server.listen(port, "0.0.0.0", () => {
   logger.info({ port, service: serviceName }, "server listening");
 });
 
+// Kubernetes sends SIGTERM before stopping the pod: finish open requests, then exit.
+process.on("SIGTERM", () => {
+  server.close(() => {
+{%- if database == 'sqlite' %}
+    db.close();
+{%- endif %}
+    process.exit(0);
+  });
+});

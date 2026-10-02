@@ -20,14 +20,28 @@ ENV NODE_ENV=production
 # OpenTelemetry: the image turns the SDK on (src/instrumentation.ts); the platform injects where to send it
 # (OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL, OTEL_SERVICE_NAME; make app-new --otlp).
 # Logs go to stdout, which the platform collects, so the SDK does not export them too.
+{%- if database == 'sqlite' %}
+# node:sqlite is still marked experimental in Node 24; its one start-up warning is silenced.
+ENV NODE_OPTIONS="--import /app/dist/instrumentation.js --disable-warning=ExperimentalWarning" \
+{%- else %}
 ENV NODE_OPTIONS="--import /app/dist/instrumentation.js" \
+{%- endif %}
     OTEL_TRACES_EXPORTER=otlp \
     OTEL_METRICS_EXPORTER=otlp \
+{%- if kind == 'web' %}
     OTEL_LOGS_EXPORTER=none \
     PORT=8080
+{%- else %}
+    OTEL_LOGS_EXPORTER=none
+{%- endif %}
 WORKDIR /app
 COPY --from=prod-deps --chown=65532:65532 /app/node_modules ./node_modules
 COPY --from=prod-deps --chown=65532:65532 /app/package.json ./package.json
 COPY --from=build --chown=65532:65532 /app/dist ./dist
+{%- if database == 'sqlite' %}
+COPY --chown=65532:65532 migrations ./migrations
+{%- endif %}
+{%- if kind == 'web' %}
 EXPOSE 8080
-CMD ["dist/server.js"]
+{%- endif %}
+CMD ["dist/main.js"]

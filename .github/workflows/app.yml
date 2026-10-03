@@ -137,6 +137,14 @@ jobs:
           set -Eeuo pipefail
           field() { if [ -f swhurl.yaml ]; then sed -n "s/^$1: *//p" swhurl.yaml | head -1; fi; }
           trap 'result=$?; if [ "$result" -ne 0 ]; then docker logs smoke || true; fi' EXIT
+          # A crash at start-up (a bad import, a missing file) shows within a second or two; poll for 4 s and
+          # fail as soon as the container stops instead of waiting a fixed 10 s.
+          stays_running() {
+            for _ in 1 2 3 4; do
+              sleep 1
+              [ "$(docker inspect -f '{{.State.Running}}' smoke)" = true ] || return 1
+            done
+          }
           kind=$(field kind); kind=${kind:-web}; database=$(field database)
           args=(--read-only --tmpfs /tmp)
           if [ "$database" = sqlite ]; then data_dir=$(mktemp -d); chmod 1777 "$data_dir"; args+=(-v "$data_dir:/data" -e DATABASE_PATH=/data/app.db); fi
@@ -154,8 +162,7 @@ jobs:
             curl -fsS "http://127.0.0.1:18080$path" >/dev/null || { docker logs smoke; exit 1; }
             curl -fsS http://127.0.0.1:18080/ >/dev/null || { docker logs smoke; exit 1; }
           fi
-          sleep 10
-          [ "$(docker inspect -f '{{.State.Running}}' smoke)" = true ] || { docker logs smoke; exit 1; }
+          stays_running || { docker logs smoke; exit 1; }
           if [ "$database" = sqlite ]; then
             docker stop smoke
             python3 - "$data_dir/app.db" "$data_dir/before.json" <<'PYSQL'
@@ -180,8 +187,7 @@ jobs:
               curl -fsS "http://127.0.0.1:18080$path" >/dev/null
               curl -fsS http://127.0.0.1:18080/ >/dev/null
             fi
-            sleep 10
-            [ "$(docker inspect -f '{{.State.Running}}' smoke)" = true ] || { docker logs smoke; exit 1; }
+            stays_running || { docker logs smoke; exit 1; }
             docker stop smoke
             python3 - "$data_dir/app.db" "$data_dir/before.json" <<'PYSQL'
           import json, shutil, sqlite3, sys, tempfile

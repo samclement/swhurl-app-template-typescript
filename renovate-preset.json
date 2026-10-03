@@ -1,22 +1,40 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Renovate rules shared by every app built from the swhurl template. Apps extend this file (github>samclement/swhurl-app-template-typescript:renovate-preset), so a change here reaches all of them on Renovate's next run.",
-  "extends": ["config:recommended"],
+  "extends": [
+    "config:recommended"
+  ],
   "dependencyDashboard": true,
   "packageRules": [
     {
       "description": "OpenTelemetry packages release together; update them in one PR.",
-      "matchPackageNames": ["/^@opentelemetry//"],
+      "matchPackageNames": [
+        "/^@opentelemetry//"
+      ],
       "groupName": "OpenTelemetry"
     },
     {
       "description": "Minor, patch and digest updates merge themselves once every check passes (type-check, tests, image build, smoke test). Each merge deploys to staging; production changes only through a promote. Apps without tests set automerge to false in their renovate.json.",
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
       "automerge": true
     },
     {
       "description": "Major updates wait for a person.",
-      "matchUpdateTypes": ["major"],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Copier updates can touch app edits; always review their complete diff and conflicts.",
+      "matchManagers": [
+        "copier"
+      ],
       "automerge": false
     }
   ]

@@ -65,7 +65,7 @@ To see telemetry locally, `npm run build`, then `OTEL_TRACES_EXPORTER=console no
 
 ## Checks and dependency updates
 
-Every pull request and every push to `main` of an app runs the same checks, from the workflow shared by every app: its `.github/workflows/container.yml` calls the template's [`app.yml`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/.github/workflows/app.yml), so fixes to the checks reach this repository without editing it (keep `container.yml` as it is). The checks: type-check, `npm test`, an image build, and a smoke test that starts the image the way the cluster does (read-only root filesystem, only `/tmp` writable, and `/data` with a database), read from the app's `swhurl.yaml`: a web app must answer its health path within 120 s (the platform's start-up allowance) and then `/`, and every app must stay up. SQLite images must apply migrations, write events, then preserve those rows and write again after a container restart using the same data directory. Only `main` pushes the image.
+Every pull request and every push to `main` of an app runs the same checks, from the workflow shared by every app: its `.github/workflows/container.yml` calls the template's [`app.yml`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/.github/workflows/app.yml), so Renovate proposes updates to its pinned workflow version. The checks: type-check, `npm test`, an image build, and a smoke test that starts the image the way the cluster does (read-only root filesystem, only `/tmp` writable, and `/data` with a database), read from the app's `swhurl.yaml`: a web app must answer its health path within 120 s (the platform's start-up allowance) and then `/`, and every app must stay up. SQLite images must apply migrations, write events, then preserve those rows and write again after a container restart using the same data directory. Only `main` pushes the image.
 
 [Renovate](https://docs.renovatebot.com/) opens the update pull requests. `renovate.json` extends the template's shared [`renovate-preset.json`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/renovate-preset.json), so rule changes there reach every app:
 
@@ -78,3 +78,9 @@ Every pull request and every push to `main` of an app runs the same checks, from
 **Keep a test.** `test/healthz.test.mjs` is the minimum; add tests for what the app does. An app without tests should not merge updates unchecked: set `"automerge": false` in its `renovate.json`, so updates wait for you, and check staging before promoting.
 
 Renovate runs here because the Renovate GitHub App is installed for all repositories with a config file required; a new app repository is picked up on its next run, with no onboarding pull request. The Dependency Dashboard issue lists pending updates.
+
+## Template updates
+
+The platform catalogue pins a tested template commit. Releases have immutable version tags, which Copier records in `.copier-answers.yml` even when copying by commit. Renovate's Copier manager proposes complete template updates from these tags, using the saved answers and preserving independent app edits. Copier PRs always require manual review; resolve any conflict markers before merging. The Container workflow runs app checks on the PR and publishes only after a main merge.
+
+For existing apps with a commit hash in their answers file, bootstrap to a released tag with `uvx copier@9.18.2 update --skip-answered --defaults --vcs-ref v0.1.0` on a clean branch and review the diff. Commit it and open a PR; do not edit `_commit` by hand. No template credential or scheduled updater is needed.

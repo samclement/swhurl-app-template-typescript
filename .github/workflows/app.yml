@@ -97,7 +97,9 @@ jobs:
             echo "type=registry,ref=$shared"
             echo "EOF"
             echo "cache-to<<EOF"
-            echo "type=gha,scope=$scope,mode=max"
+            # An app does not write its own Actions cache: exporting every layer, base image included, took
+            # 29 s of a 37 s first build, and the shared registry cache already serves the dependency layers.
+            if [ "$TEMPLATE" = true ]; then echo "type=gha,scope=$scope,mode=max"; fi
             if [ "$TEMPLATE" = true ] && [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
               echo "type=registry,ref=$shared,mode=max,image-manifest=true,oci-mediatypes=true"
             fi

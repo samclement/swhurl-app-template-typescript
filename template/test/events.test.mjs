@@ -34,6 +34,7 @@ test("declarations come from the platform's variables", () => {
 test("off the platform nothing is published or received, and nothing fails", async () => {
   assert.equal(eventsEnabled(), false);
   assert.equal(await publish("sent", {}), null);
-  const stop = await subscribe("orders.created", () => assert.fail("no event can arrive"));
+  const stop = subscribe("orders.created", () => assert.fail("no event can arrive"));
   await stop();
+  assert.throws(() => subscribe("created", () => {}), /subscribe to "<app>.<event>"/);
 });

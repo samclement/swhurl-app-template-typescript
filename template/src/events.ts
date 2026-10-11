@@ -5,7 +5,7 @@
 // platform then gives this app an address, a key and permission for exactly those events:
 //
 //   await publish("created", { id: 42 });                    // other apps see <this app>.created
-//   await subscribe("orders.created", async (event) => { ... });   // throw to get it again
+//   subscribe("orders.created", async (event) => { ... });         // throw to get it again
 //
 // An event travels as a CloudEvents JSON envelope with the trace context in its headers, so the
 // subscriber's work joins the publisher's trace. Off the platform (local development, tests) there
@@ -71,6 +71,10 @@ function connected(): NonNullable<typeof connecting> {
     });
     return { nats, connection, jetstream: connection.jetstream() };
   })();
+  // A failed attempt is not kept: the next publish or the subscriber's next try connects again.
+  connecting.catch(() => {
+    connecting = undefined;
+  });
   return connecting;
 }
 
@@ -102,39 +106,53 @@ export async function publish<T>(event: string, data: T): Promise<CloudEvent<T> 
 /**
  * Receive a declared event, "<app>.<event>", one at a time, from where this app last stopped.
  * The handler's work is a span in the publisher's trace. If it throws, the event comes back after
- * a few seconds (five tries in all). Returns a function that stops receiving.
+ * a few seconds (five tries in all). Returns at once with a function that stops receiving.
+ *
+ * It keeps trying until it is receiving: a new app can start before NATS has loaded its user or
+ * the platform has created its consumer. onProblem hears each failed try (to log it).
  */
-export async function subscribe(name: string, handler: Handler): Promise<() => Promise<void>> {
-  if (!eventsEnabled()) return async () => {};
+export function subscribe(name: string, handler: Handler, onProblem?: (error: unknown) => void): () => Promise<void> {
   const [publisher, event] = name.split(".");
   if (!publisher || !event) throw new Error(`subscribe to "<app>.<event>", not "${name}"`);
-  const { jetstream } = await connected();
-  // The platform created this consumer from the declaration; an undeclared one does not exist.
-  const consumer = await jetstream.consumers.get(streamOf(publisher), consumerOf(event));
-  const messages = await consumer.consume({ max_messages: 1 });
+  if (!eventsEnabled()) return async () => {};
+  let stopped = false;
+  let close: (() => Promise<unknown>) | undefined;
   void (async () => {
-    for await (const message of messages) {
-      const parent = propagation.extract(context.active(), message.headers, {
-        get: (carrier: MsgHdrs | undefined, key) => carrier?.get(key) || undefined,
-        keys: (carrier: MsgHdrs | undefined) => carrier?.keys() ?? [],
-      });
-      await tracer().startActiveSpan(`process ${name}`, { kind: SpanKind.CONSUMER }, parent, async (span) => {
-        span.setAttributes({ "messaging.system": "nats", "messaging.destination.name": message.subject });
-        try {
-          await handler(message.json<CloudEvent>());
-          message.ack();
-        } catch (error) {
-          span.recordException(error as Error);
-          span.setStatus({ code: SpanStatusCode.ERROR });
-          message.nak(5_000);
-        } finally {
-          span.end();
+    while (!stopped) {
+      try {
+        const { jetstream } = await connected();
+        // The platform created this consumer from the declaration; an undeclared one does not exist.
+        const consumer = await jetstream.consumers.get(streamOf(publisher), consumerOf(event));
+        const messages = await consumer.consume({ max_messages: 1 });
+        close = () => messages.close();
+        for await (const message of messages) {
+          const parent = propagation.extract(context.active(), message.headers, {
+            get: (carrier: MsgHdrs | undefined, key) => carrier?.get(key) || undefined,
+            keys: (carrier: MsgHdrs | undefined) => carrier?.keys() ?? [],
+          });
+          await tracer().startActiveSpan(`process ${name}`, { kind: SpanKind.CONSUMER }, parent, async (span) => {
+            span.setAttributes({ "messaging.system": "nats", "messaging.destination.name": message.subject });
+            try {
+              await handler(message.json<CloudEvent>());
+              message.ack();
+            } catch (error) {
+              span.recordException(error as Error);
+              span.setStatus({ code: SpanStatusCode.ERROR });
+              message.nak(5_000);
+            } finally {
+              span.end();
+            }
+          });
         }
-      });
+      } catch (error) {
+        onProblem?.(error);
+      }
+      if (!stopped) await new Promise((resolve) => setTimeout(resolve, 5_000));
     }
   })();
   return async () => {
-    await messages.close();
+    stopped = true;
+    await close?.();
   };
 }
 

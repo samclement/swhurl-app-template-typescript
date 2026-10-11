@@ -46,6 +46,8 @@ What the image provides (keep these true, and update `swhurl.yaml` with them):
 
 Every app also gets `src/platform.ts`: `identify()` tells a web app whether a request comes from another app (a platform-issued token for this app alone), a signed-in person or nobody, and `service("name")` calls an app declared under `calls:` in `swhurl.yaml` with this app's token for it ([calling another app](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#calling-another-app)). It uses Node's own `crypto`, so it adds no dependency.
 
+`src/events.ts` does the same for [events](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#events): `publish("created", data)` and `subscribe("orders.created", handler)` for the events declared under `events:` in `swhurl.yaml`, over NATS JetStream with the app's own key, as CloudEvents carrying the trace. It is the one runtime dependency this adds (`nats`), loaded only when an app uses events.
+
 What the platform injects (the preset's `--otlp`): `OTEL_EXPORTER_OTLP_ENDPOINT` (the collector on the pod's node), `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` and `OTEL_SERVICE_NAME` (the app name). Nothing in this repository names the cluster; the platform owns the Kubernetes manifests.
 
 Sign-in happens before requests reach the app; it can read the user from `X-Auth-Request-Email`, `X-Auth-Request-User` and `X-Auth-Request-Preferred-Username`.

@@ -4,6 +4,7 @@ import pino from "pino";
 {%- if database == 'sqlite' %}
 import { openDatabase } from "./db.js";
 {%- endif %}
+import { type Caller, Unauthorized, identify, service } from "./platform.js";
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? "info",
@@ -19,11 +20,18 @@ const countVisits = db.prepare("SELECT count(*) AS n FROM events WHERE kind = 'v
 {%- endif %}
 
 const server = http.createServer((request, response) => {
+  void handle(request, response).catch((error: unknown) => {
+    logger.error({ err: error, path: request.url }, "request failed");
+    if (!response.headersSent) response.writeHead(500, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: "internal error" }));
+  });
+});
+
+async function handle(request: http.IncomingMessage, response: http.ServerResponse): Promise<void> {
   const start = Date.now();
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-  const email = request.headers["x-auth-request-email"];
-  const user = request.headers["x-auth-request-user"];
   const span = trace.getActiveSpan();
+  const traceId = span?.spanContext().traceId ?? null;
 
   if (url.pathname === "/healthz") {
 {%- if database == 'sqlite' %}
@@ -31,6 +39,52 @@ const server = http.createServer((request, response) => {
 {%- endif %}
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // Who is calling: another app (it sent a token the platform issued for this app alone), a
+  // signed-in person, or anonymous. A bad token is refused here; see src/platform.ts.
+  let caller: Caller;
+  try {
+    caller = identify(request.headers);
+  } catch (error) {
+    if (!(error instanceof Unauthorized)) throw error;
+    response.writeHead(401, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: error.message }));
+    logger.warn({ method: request.method, path: url.pathname, status: 401, reason: error.message, trace_id: traceId },
+      "request refused");
+    return;
+  }
+  span?.setAttribute("caller.type", caller.type);
+  if (caller.id) span?.setAttribute("caller.id", caller.id);
+  const done = (status: number): void => {
+    logger.info({
+      method: request.method,
+      path: url.pathname,
+      status,
+      duration_ms: Date.now() - start,
+      "caller.type": caller.type,
+      "caller.id": caller.id,
+      trace_id: traceId,
+    }, "request handled");
+  };
+
+  // An example of calling another app: GET /call/orders asks the app "orders" for its "/" and
+  // returns what it said. It works once this app declares the call (calls: [orders] in swhurl.yaml).
+  if (url.pathname.startsWith("/call/")) {
+    const name = url.pathname.slice("/call/".length);
+    let status = 502;
+    let body: unknown;
+    try {
+      const reply = await service(name).fetch("/");
+      status = reply.ok ? 200 : 502;
+      body = { called: name, status: reply.status, reply: await reply.json().catch(() => null) };
+    } catch (error) {
+      body = { called: name, error: (error as Error).message };
+    }
+    response.writeHead(status, { "content-type": "application/json" });
+    response.end(JSON.stringify(body, null, 2));
+    done(status);
     return;
   }
 {%- if database == 'sqlite' %}
@@ -43,27 +97,17 @@ const server = http.createServer((request, response) => {
     message: `hello from ${serviceName}`,
     service: serviceName,
     path: url.pathname,
-    user: typeof user === "string" ? user : null,
-    email: typeof email === "string" ? email : null,
+    caller,
 {%- if database == 'sqlite' %}
     visits,
 {%- endif %}
-    traceId: span?.spanContext().traceId ?? null,
+    traceId,
   };
 
   response.writeHead(200, { "content-type": "application/json" });
   response.end(JSON.stringify(body, null, 2));
-
-  logger.info({
-    method: request.method,
-    path: url.pathname,
-    status: 200,
-    duration_ms: Date.now() - start,
-    user: body.user,
-    email: body.email,
-    trace_id: body.traceId,
-  }, "request handled");
-});
+  done(200);
+}
 
 server.listen(port, "0.0.0.0", () => {
   logger.info({ port, service: serviceName }, "server listening");

@@ -7,7 +7,7 @@ import http from "node:http";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Unauthorized, identify, requireApp, service } from "../dist/platform.js";
+import { Unauthorized, identify, notify, requireApp, service } from "../dist/platform.js";
 
 const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const ISSUER = "https://kubernetes.default.svc.cluster.local";
@@ -95,4 +95,47 @@ test("service() sends this app's token for the callee to its address", async (t)
     { path: "/stock/43", authorization: "Bearer second" },
   ]);
   assert.throws(() => service("inventory"), /SWHURL_SERVICE_INVENTORY_URL is not set: declare the call/);
+});
+
+test("notify() posts the message with this app's token for the notify service and never throws", async (t) => {
+  const seen = [];
+  let status = 202;
+  const notifyService = http.createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => (body += chunk));
+    request.on("end", () => {
+      seen.push({ path: request.url, method: request.method, authorization: request.headers.authorization, body: JSON.parse(body) });
+      response.writeHead(status, { "content-type": "application/json" });
+      response.end(JSON.stringify(status === 202 ? { channels: ["payments"] } : { error: "try again later" }));
+    });
+  });
+  await new Promise((resolve) => notifyService.listen(0, "127.0.0.1", resolve));
+  t.after(() => notifyService.close());
+  const warnings = [];
+  t.mock.method(console, "warn", (line) => warnings.push(JSON.parse(line)));
+  const tokens = mkdtempSync(join(tmpdir(), "tokens-"));
+  mkdirSync(join(tokens, "notify"));
+  writeFileSync(join(tokens, "notify", "token"), "for-notify\n");
+  process.env.SWHURL_TOKENS_DIR = tokens;
+
+  delete process.env.SWHURL_NOTIFY_URL;
+  assert.equal(await notify("Order backlog"), false, "outside the platform nothing is sent");
+  assert.deepEqual([seen, warnings], [[], []]);
+
+  process.env.SWHURL_NOTIFY_URL = `http://127.0.0.1:${notifyService.address().port}`;
+  assert.equal(await notify("Order backlog", { message: "412 waiting", priority: "high", key: "backlog-1" }), true);
+  assert.deepEqual(seen, [{
+    path: "/v1/notify",
+    method: "POST",
+    authorization: "Bearer for-notify",
+    body: { title: "Order backlog", message: "412 waiting", priority: "high", key: "backlog-1" },
+  }]);
+
+  status = 429;
+  assert.equal(await notify("Order backlog"), false);
+  assert.equal(warnings[0].msg, "notification not sent: the notify service answered 429: try again later");
+
+  process.env.SWHURL_NOTIFY_URL = "http://127.0.0.1:1";
+  assert.equal(await notify("Order backlog"), false, "an unreachable service is a warning, not an exception");
+  assert.equal(warnings.length, 2);
 });

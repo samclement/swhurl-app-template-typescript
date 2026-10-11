@@ -5,6 +5,8 @@
 // service-account token the platform issued for this app alone), a signed-in person, or anonymous.
 // Calling: service("orders").fetch("/path") needs `calls: [orders]` in swhurl.yaml; the platform
 // then sets SWHURL_SERVICE_ORDERS_URL and mounts a token only orders accepts.
+// Notifying: notify("Order backlog") sends a message to the channel of the team that owns this app.
+// Nothing is declared: every app is given the notify service's address and a token for it.
 import { createPublicKey, verify as verifySignature } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { IncomingHttpHeaders } from "node:http";
@@ -103,4 +105,43 @@ export function service(name: string): { url: string; fetch(path: string, init?:
       return fetch(new URL(path, url), { signal: AbortSignal.timeout(10_000), ...init, headers });
     },
   };
+}
+
+export type Notification = { message?: string; priority?: "normal" | "high"; click?: string; key?: string };
+
+/**
+ * Send a message to the notification channel of the team that owns this app
+ * (https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#notifications). It arrives
+ * titled "<app>/<env>: <title>": the platform takes who sent it from this app's token. `key` makes a
+ * repeat harmless (the same key is delivered once); `click` is an https link opened from the message.
+ *
+ * Resolves to whether the platform accepted it, and never throws: a notification must not break the
+ * work that sent it. It is not accepted when the app has sent 30 in the last hour, and outside the
+ * platform (SWHURL_NOTIFY_URL is not set) nothing is sent. A team without a channel accepts and
+ * delivers nothing.
+ */
+export async function notify(title: string, options: Notification = {}): Promise<boolean> {
+  const url = process.env.SWHURL_NOTIFY_URL;
+  if (!url) return false;
+  const refused = (reason: string): boolean => {
+    console.warn(JSON.stringify({ level: "warn", msg: `notification not sent: ${reason}`, title }));
+    return false;
+  };
+  // The platform replaces the token file every few minutes, so read it for each call.
+  const tokenFile = `${process.env.SWHURL_TOKENS_DIR ?? "/var/run/swhurl/tokens"}/notify/token`;
+  try {
+    const headers = new Headers({ "content-type": "application/json" });
+    if (existsSync(tokenFile)) headers.set("authorization", `Bearer ${readFileSync(tokenFile, "utf8").trim()}`);
+    const reply = await fetch(new URL("/v1/notify", url), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ title, ...options }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (reply.status === 202) return true;
+    const answer = (await reply.json().catch(() => null)) as { error?: string } | null;
+    return refused(`the notify service answered ${reply.status}${answer?.error ? `: ${answer.error}` : ""}`);
+  } catch (error) {
+    return refused((error as Error).message);
+  }
 }

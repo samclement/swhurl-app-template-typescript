@@ -5,7 +5,7 @@ import pino from "pino";
 import { openDatabase } from "./db.js";
 {%- endif %}
 import { closeEvents, declaredPublishes, declaredSubscriptions, publish, subscribe } from "./events.js";
-import { type Caller, Unauthorized, identify, service } from "./platform.js";
+import { type Caller, Unauthorized, identify, notify, service } from "./platform.js";
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? "info",
@@ -86,6 +86,16 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
     response.writeHead(status, { "content-type": "application/json" });
     response.end(JSON.stringify(body, null, 2));
     done(status);
+    return;
+  }
+
+  // An example of notifying the team: POST /notify sends a message to the notification channel of
+  // the team that owns this app, and says whether the platform accepted it.
+  if (url.pathname === "/notify" && request.method === "POST") {
+    const sent = await notify("Hello from the example route", { message: `Asked for by ${caller.id ?? "an anonymous caller"}.` });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ sent }, null, 2));
+    done(200);
     return;
   }
 {%- if database == 'sqlite' %}

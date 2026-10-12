@@ -30,6 +30,7 @@ jobs:
   build:
     name: Check, build and smoke-test
     runs-on: ubuntu-latest
+    timeout-minutes: 20   # a normal run takes under two; a test that never exits must not hold the run for hours
     env:
       APP_DIR: ${{ inputs.template && 'app' || '.' }}
       PUBLISH: ${{ !inputs.template && github.event_name != 'pull_request' }}

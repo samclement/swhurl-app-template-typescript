@@ -1,6 +1,6 @@
 import { trace } from "@opentelemetry/api";
 import pino from "pino";
-import { closeEvents, declaredSubscriptions, subscribe } from "./events.js";
+import { closeEvents, declaredSubscriptions, {% if events == 'asyncapi' %}publish, {% endif %}subscribe } from "./events.js";
 {%- if database == 'sqlite' %}
 import { openDatabase } from "./db.js";
 {%- endif %}
@@ -25,6 +25,11 @@ async function work(): Promise<void> {
     try {
 {%- if database == 'sqlite' %}
       recordRun.run(serviceName, new Date().toISOString());
+{%- endif %}
+{%- if events == 'asyncapi' %}
+      // An example of publishing: "worked" is described in asyncapi.yaml, which is what lets other
+      // apps find it and subscribe. Off the platform the payload is still checked, and nothing is sent.
+      await publish("worked", { at: new Date().toISOString() });
 {%- endif %}
       logger.info({ trace_id: span.spanContext().traceId }, "work done");
     } catch (error) {

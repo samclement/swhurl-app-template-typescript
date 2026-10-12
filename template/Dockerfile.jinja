@@ -44,6 +44,9 @@ COPY --from=build --chown=65532:65532 /app/dist ./dist
 {%- if database == 'sqlite' %}
 COPY --chown=65532:65532 migrations ./migrations
 {%- endif %}
+{%- if events == 'asyncapi' %}
+COPY --chown=65532:65532 asyncapi.yaml ./asyncapi.yaml
+{%- endif %}
 {%- if kind == 'web' %}
 EXPOSE 8080
 {%- endif %}

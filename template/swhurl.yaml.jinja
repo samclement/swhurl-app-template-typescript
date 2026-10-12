@@ -13,3 +13,18 @@ autoDeploy: true
 {%- if database == 'sqlite' %}
 database: sqlite
 {%- endif %}
+{%- if kind == 'web' and api == 'openapi' or events == 'asyncapi' %}
+# What this app offers other apps: its API description (served, and kept in the repository) and its events.
+provides:
+{%- if kind == 'web' and api == 'openapi' %}
+  api: /openapi.json
+  apiFile: openapi.json
+{%- endif %}
+{%- if events == 'asyncapi' %}
+  eventsFile: asyncapi.yaml
+{%- endif %}
+{%- endif %}
+{%- if events == 'asyncapi' %}
+events:
+  publish: [{{ 'visited' if kind == 'web' else 'worked' }}]
+{%- endif %}

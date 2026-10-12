@@ -5,7 +5,7 @@
 A TypeScript app on the [swhurl platform](https://github.com/samclement/swhurl-platform), made from the [swhurl TypeScript template](https://github.com/samclement/swhurl-app-template-typescript). Every push to `main` is checked, published to `ghcr.io/<owner>/{{ app_name }}` and deployed to staging; production changes through **Promote to production**. What the image must provide, the checks and the dependency updates: the [template's guide](https://github.com/samclement/swhurl-app-template-typescript#readme). What the app needs from the platform: [`swhurl.yaml`](swhurl.yaml).
 
 {% if kind == 'web' -%}
-An HTTP service: `src/server.ts` answers on port 8080; the platform probes `GET /healthz`.
+An HTTP service on [Hono](https://hono.dev): `src/app.ts` holds the routes and `src/server.ts` listens on port 8080; the platform probes `GET /healthz`.
 {%- else -%}
 A background worker with no web address: `src/worker.ts` runs `work()` every `WORK_INTERVAL_MS` (default a minute).
 {%- endif %}
@@ -15,9 +15,9 @@ A background worker with no web address: `src/worker.ts` runs `work()` every `WO
 
 `src/platform.ts` holds what the platform gives the app ([calling another app](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#calling-another-app)):
 {% if kind == 'web' %}
-- **Who is calling.** `identify(request.headers)` returns `{ type: "app", id: "<app>" }` for another app that sent a token the platform issued for this app alone, `{ type: "user", id: "<email>" }` for a signed-in person, or `anonymous`. A bad token throws `Unauthorized`, which `src/server.ts` answers with 401. Every log line and span carries `caller.type` and `caller.id`. For a route only apps may use, call `requireApp(caller)`.
+- **Who is calling.** `identify(headers)` returns `{ type: "app", id: "<app>" }` for another app that sent a token the platform issued for this app alone, `{ type: "user", id: "<email>" }` for a signed-in person, or `anonymous`. A bad token throws `Unauthorized`, which `src/app.ts` answers with 401. Every log line and span carries `caller.type` and `caller.id`. For a route only apps may use, call `requireApp(caller)`.
 {%- endif %}
-- **Calling another app.** Add `calls: [orders]` to `swhurl.yaml` before the app is created (afterwards: `make app-calls` on the platform, or the app page's **Calls** form). Then `await service("orders").fetch("/path")` reaches the same environment's `orders` with this app's token for it; the callee's spans join the same trace.{% if kind == 'web' %} `GET /call/orders` in `src/server.ts` is an example to replace.{% endif %}
+- **Calling another app.** Add `calls: [orders]` to `swhurl.yaml` before the app is created (afterwards: `make app-calls` on the platform, or the app page's **Calls** form). Then `await service("orders").fetch("/path")` reaches the same environment's `orders` with this app's token for it; the callee's spans join the same trace.{% if kind == 'web' %} `GET /call/orders` in `src/app.ts` is an example to replace.{% endif %}
 
 ## Notifications
 
@@ -33,8 +33,24 @@ events:
   subscribe: [orders.created]      # <app>.<event>
 ```
 
-Then `await publish("created", data)` and `await subscribe("orders.created", async (event) => { ... })`. An event is a CloudEvents envelope (`event.data` is what was published); a handler runs inside the publisher's trace, and if it throws the event comes back, five tries in all. {% if kind == 'web' %}`src/server.ts` publishes the first declared event on every request and logs every event it subscribes to{% else %}`src/worker.ts` logs every event it subscribes to{% endif %}: examples to replace. `subscribe` keeps trying until it is receiving, since a new app can start before NATS knows it. Locally there is no NATS: `publish` returns `null` and `subscribe` never calls back.
+Then `await publish("created", data)` and `await subscribe("orders.created", async (event) => { ... })`. An event is a CloudEvents envelope (`event.data` is what was published); a handler runs inside the publisher's trace, and if it throws the event comes back, five tries in all. {% if events == 'asyncapi' %}{% if kind == 'web' %}`src/app.ts` publishes `visited` on every request to `/`{% else %}`src/worker.ts` publishes `worked` after every run{% endif %} and logs every event it subscribes to{% elif kind == 'web' %}`src/app.ts` publishes the first declared event on every request to `/` and `src/server.ts` logs every event it subscribes to{% else %}`src/worker.ts` logs every event it subscribes to{% endif %}: examples to replace. `subscribe` keeps trying until it is receiving, since a new app can start before NATS knows it. Locally there is no NATS: `publish` returns `null` and `subscribe` never calls back.
 
+{% if events == 'asyncapi' -%}
+### The events this app offers: `asyncapi.yaml`
+
+[`asyncapi.yaml`](asyncapi.yaml) describes each event {{ app_name }} publishes ([AsyncAPI 3](https://www.asyncapi.com/docs)): its name, what it means, the schema of its payload and an example. It is the declaration. The platform reads it to show other apps what they can subscribe to, and `publish()` throws `EventInvalid` for an event that is not in it or a payload that does not fit, locally as well as on the platform.
+
+To add an event, add to `asyncapi.yaml` a channel (its `address` is the event's name), a message with a `payload` schema and an example, and a `send` operation; then call `publish("<name>", data)`. `test/asyncapi.test.mjs` checks the file is valid AsyncAPI and that every example fits its schema. Until the platform reads the file by itself, also list the event under `events.publish` in `swhurl.yaml` (or `make app-events` on the platform).
+
+{% endif -%}
+{% if kind == 'web' and api == 'openapi' -%}
+## The API this app offers: `openapi.json`
+
+Routes written with `createRoute` in `src/app.ts` carry their request and response schemas ([zod](https://zod.dev)), and [`openapi.json`](openapi.json) is generated from them ([OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.0)); the app also serves it at `/openapi.json`. The platform reads the file to show other apps what they can call.
+
+After changing a described route, run `npm run build && npm run openapi` and commit `openapi.json`: `test/openapi.test.mjs` fails while the file and the routes disagree, so a change to the API always shows in a pull request. A route added with plain `app.get(...)` works but is not described.
+
+{% endif -%}
 ## Without the platform
 
 Locally there are no platform keys or tokens: {% if kind == 'web' %}requests without a token work as before and a request with one is refused; {% endif %}to call another app, set `SWHURL_SERVICE_<NAME>_URL` to a local stub.

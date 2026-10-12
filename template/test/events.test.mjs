@@ -6,7 +6,8 @@ import {
   consumerOf, declaredPublishes, declaredSubscriptions, envelope, eventsEnabled, publish, streamOf, subjectOf, subscribe,
 } from "../dist/events.js";
 
-Object.assign(process.env, { SWHURL_APP: "notifier", SWHURL_ENV: "staging" });
+// SWHURL_EVENTS_FILE: this file tests the helper alone, not the events this app describes (asyncapi.yaml).
+Object.assign(process.env, { SWHURL_APP: "notifier", SWHURL_ENV: "staging", SWHURL_EVENTS_FILE: "none.yaml" });
 
 test("names follow the platform's: environment first, then the publishing app", () => {
   assert.equal(subjectOf("orders", "created"), "staging.orders.created");

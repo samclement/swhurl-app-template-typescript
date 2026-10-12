@@ -21,10 +21,12 @@ This is a [Copier](https://copier.readthedocs.io/) template: `template/` is the 
 
 | Question | Choices | What it adds |
 | --- | --- | --- |
-| `kind` | `web` (default), `worker` | `web`: an HTTP service on 8080 with `GET /healthz` (`src/server.ts`). `worker`: a background process with no web address that does one unit of work every `WORK_INTERVAL_MS` (default a minute; `src/worker.ts`); the platform makes it private |
+| `kind` | `web` (default), `worker` | `web`: an HTTP service on [Hono](https://hono.dev), port 8080, with `GET /healthz` (routes in `src/app.ts`, started by `src/server.ts`). `worker`: a background process with no web address that does one unit of work every `WORK_INTERVAL_MS` (default a minute; `src/worker.ts`); the platform makes it private |
 | `database` | `none` (default), `sqlite` | A SQLite database at `DATABASE_PATH`, on a volume the platform keeps and backs up nightly (`src/db.ts`), with migrations in `migrations/NNN_name.sql` applied once each at startup. Uses Node's built-in `node:sqlite` (no native module; Node still marks it experimental, and the image silences that one warning). The web example counts visits, the worker example records its runs |
+| `api` | `none` (default), `openapi` | Web only. The example route is written with `@hono/zod-openapi`, and `openapi.json` is generated from the routes (`npm run openapi`), committed, served at `/openapi.json` and named in `swhurl.yaml` (`provides.api`, `provides.apiFile`), so the platform can show other apps what they can call. A test fails while the file and the routes disagree |
+| `events` | `none` (default), `asyncapi` | `asyncapi.yaml` describes the events the app publishes ([AsyncAPI 3](https://www.asyncapi.com/docs)), with an example event (`visited` for web, `worked` for a worker), and `swhurl.yaml` names it (`provides.eventsFile`). `publish()` then refuses an event that is not in the file or a payload that does not fit its schema. Every app can publish and subscribe without this answer; it adds the description other apps find |
 
-Files and lines that depend on an answer are Jinja: a file named `{% if kind == 'web' %}server.ts{% endif %}` exists only for that answer, and `*.jinja` files are rendered. `swhurl.yaml` follows the answers, so the platform gives a worker no route and a database app its volume. Each app keeps `.copier-answers.yml`, so later template changes can reach it with `copier update`. By hand: `uvx copier copy --data app_name=<app> --data kind=worker --data database=sqlite gh:samclement/swhurl-app-template-typescript <dir>`. A new question needs a line in the Template workflow's matrix.
+Files and lines that depend on an answer are Jinja: a file named `{% if kind == 'web' %}server.ts{% endif %}` exists only for that answer, and `*.jinja` files are rendered. `swhurl.yaml` follows the answers, so the platform gives a worker no route and a database app its volume. Each app keeps `.copier-answers.yml`, so later template changes can reach it with `copier update`. By hand: `uvx copier copy --data app_name=<app> --data kind=worker --data database=sqlite gh:samclement/swhurl-app-template-typescript <dir>`. The Template workflow renders the defaults, each other choice on its own and all of them together (for both kinds), rather than every combination: add a new choice to those lines.
 
 Shared by every app and kept at the top level: [`.github/workflows/app.yml`](.github/workflows/app.yml), the checks and image build each app's `container.yml` calls, and [`renovate-preset.json`](renovate-preset.json). The **Template** workflow renders the template once per combination of answers and runs `app.yml` on each result for every pull request, so a change here is proven on fresh apps before it reaches any.
 
@@ -37,11 +39,11 @@ What the image provides (keep these true, and update `swhurl.yaml` with them):
 | | Value | Where |
 | --- | --- | --- |
 | Port (web) | `8080` (`PORT`) | `Dockerfile`, `src/server.ts` |
-| Health path (web) | `GET /healthz` returns 200 (with a database, only once it answers) | `src/server.ts` |
+| Health path (web) | `GET /healthz` returns 200 (with a database, only once it answers) | `src/app.ts` |
 | Database (`sqlite`) | the file at `DATABASE_PATH`; one copy runs at a time, so no locking between replicas | `src/db.ts` |
 | User | UID 65532, non-root, read-only root filesystem friendly (writes only to `/tmp`) | distroless `nonroot` base image |
 | OpenTelemetry SDK | Node auto-instrumentation, loaded before the app by `NODE_OPTIONS=--import /app/dist/instrumentation.js` (it registers the ES-module hook, without which HTTP is not traced); traces and metrics over OTLP, logs not exported (stdout is collected) | `src/instrumentation.ts`, `Dockerfile` |
-| Logs | JSON on stdout (`pino`) | `src/server.ts`, `src/worker.ts` |
+| Logs | JSON on stdout (`pino`) | `src/app.ts`, `src/worker.ts` |
 | Image tags | `<run number>-<short sha>`, never `latest` | the shared [`app.yml`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/.github/workflows/app.yml) |
 
 Every app also gets `src/platform.ts`: `identify()` tells a web app whether a request comes from another app (a platform-issued token for this app alone), a signed-in person or nobody, and `service("name")` calls an app declared under `calls:` in `swhurl.yaml` with this app's token for it ([calling another app](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#calling-another-app)). It uses Node's own `crypto`, so it adds no dependency.

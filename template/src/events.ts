@@ -7,10 +7,17 @@
 //   await publish("created", { id: 42 });                    // other apps see <this app>.created
 //   subscribe("orders.created", async (event) => { ... });         // throw to get it again
 //
+// An app that describes its events in asyncapi.yaml (the template's "events" feature) may publish
+// only those, each with a payload that fits its schema: publish() throws EventInvalid otherwise,
+// on the platform and off it. The file is what other apps read to find and subscribe to them.
+//
 // An event travels as a CloudEvents JSON envelope with the trace context in its headers, so the
 // subscriber's work joins the publisher's trace. Off the platform (local development, tests) there
 // is no SWHURL_EVENTS_URL: publish() does nothing and returns null, subscribe() never calls back.
 import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { Ajv, type ValidateFunction } from "ajv";
+import { parse } from "yaml";
 import { SpanKind, SpanStatusCode, context, propagation, trace } from "@opentelemetry/api";
 import type { JetStreamClient, MsgHdrs, NatsConnection } from "nats";
 
@@ -78,10 +85,60 @@ function connected(): NonNullable<typeof connecting> {
   return connecting;
 }
 
+/** An event that asyncapi.yaml does not describe, or a payload that does not fit its schema. */
+export class EventInvalid extends Error {}
+
+type Described = Map<string, ValidateFunction | null>; // event name -> its payload check (null: any payload)
+const contracts = new Map<string, Described | null>();
+
+/**
+ * The events asyncapi.yaml says this app sends, each with a check for its payload; null when the
+ * app has no such file (nothing is checked). Read once. A channel's address is the event's name;
+ * with an `operations` section, only channels an operation sends to count.
+ */
+export function describedEvents(file = process.env.SWHURL_EVENTS_FILE ?? "asyncapi.yaml"): Described | null {
+  if (contracts.has(file)) return contracts.get(file) ?? null;
+  let described: Described | null = null;
+  if (existsSync(file)) {
+    const doc = parse(readFileSync(file, "utf8")) as Record<string, any>;
+    const ajv = new Ajv({ strict: false, allErrors: true });
+    ajv.addSchema(doc, "asyncapi");
+    const at = (pointer: string): any => pointer.slice(2).split("/").reduce((node, key) => node?.[key], doc);
+    // Follow one local reference ("#/components/..."): where the thing itself is written.
+    const settle = (pointer: string): string => at(pointer)?.$ref ?? pointer;
+    const operations = Object.values((doc.operations ?? {}) as Record<string, any>);
+    const sends = new Set(operations.filter((o) => o.action === "send").map((o) => o.channel?.$ref));
+    described = new Map();
+    for (const [key, channel] of Object.entries((doc.channels ?? {}) as Record<string, any>)) {
+      if (operations.length && !sends.has(`#/channels/${key}`)) continue;
+      const [message] = Object.keys(channel.messages ?? {});
+      const payload = message ? settle(`${settle(`#/channels/${key}/messages/${message}`)}/payload`) : "";
+      described.set(channel.address ?? key, payload && at(payload) ? ajv.compile({ $ref: `asyncapi${payload}` }) : null);
+    }
+  }
+  contracts.set(file, described);
+  return described;
+}
+
+function checkDescribed(event: string, data: unknown): void {
+  const described = describedEvents();
+  if (!described) return;
+  if (!described.has(event)) {
+    throw new EventInvalid(`"${event}" is not an event asyncapi.yaml describes (${[...described.keys()].join(", ") || "none"})`);
+  }
+  const fits = described.get(event);
+  // As it will travel: what JSON drops (undefined, functions) is not there for the subscriber either.
+  if (fits && !fits(JSON.parse(JSON.stringify(data ?? null)))) {
+    const problems = (fits.errors ?? []).map((e) => `${e.instancePath || "payload"} ${e.message}`).join("; ");
+    throw new EventInvalid(`"${event}" does not fit its schema in asyncapi.yaml: ${problems}`);
+  }
+}
+
 const tracer = () => trace.getTracer("swhurl-events");
 
-/** Publish one of this app's declared events. Resolves once NATS has stored it; null off the platform. */
+/** Publish one of this app's events. Resolves once NATS has stored it; null off the platform. */
 export async function publish<T>(event: string, data: T): Promise<CloudEvent<T> | null> {
+  checkDescribed(event, data);
   if (!eventsEnabled()) return null;
   const { nats, jetstream } = await connected();
   const subject = subjectOf(app(), event);

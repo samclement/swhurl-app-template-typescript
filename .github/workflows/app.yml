@@ -2,8 +2,8 @@ name: App
 
 # The checks and image build every swhurl app runs, shared from the template: each app's
 # .github/workflows/container.yml calls this file at
-# samclement/swhurl-app-template-typescript/.github/workflows/app.yml@v…; Renovate updates each released pin (like renovate-preset.json). Pull requests: type-check, test, build the
-# image and smoke-test it (it starts, answers /healthz and keeps running). Pushes to main then push
+# samclement/swhurl-app-template-typescript/.github/workflows/app.yml@v…; Renovate updates each released pin (like renovate-preset.json). The image build compiles, type-checks and tests the
+# app, then CI smoke-tests the image (it starts, answers /healthz and keeps running). Pushes to main then push
 # the image to GHCR tagged <run number>-<short sha> (for example 42-a1b2c3d); the platform's image
 # automation deploys the highest run number to staging, and the job summary prints image@digest.
 # The template's own Template workflow calls it with template: true: it renders the template with
@@ -21,6 +21,10 @@ on:
         description: "With template: Copier answers, space-separated key=value (for example kind=worker database=sqlite)"
         type: string
         default: ''
+      checks-in-image:
+        description: Use the generated Dockerfile's checked-runtime target to compile and test once
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -60,13 +64,17 @@ jobs:
           cat app/swhurl.yaml
 
       - name: Setup Node
+        if: ${{ !inputs.template && !inputs.checks-in-image }}
         uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: ${{ env.APP_DIR }}/package-lock.json
 
-      - name: Type-check, build and test
+      # Older apps can update this workflow before Copier updates their Dockerfile. Keep their checks
+      # until the caller opts into checked-runtime; an old Dockerfile with that opt-in fails to build.
+      - name: Type-check, build and test (older Dockerfiles)
+        if: ${{ !inputs.template && !inputs.checks-in-image }}
         run: |
           npm ci
           npm run check
@@ -124,6 +132,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: ${{ env.APP_DIR }}
+          target: ${{ (inputs.template || inputs.checks-in-image) && 'checked-runtime' || '' }}
           platforms: linux/amd64
           load: true
           tags: app:smoke
@@ -222,6 +231,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: ${{ env.APP_DIR }}
+          target: ${{ inputs.checks-in-image && 'checked-runtime' || '' }}
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}

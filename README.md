@@ -63,7 +63,7 @@ uvx copier copy --vcs-ref HEAD --data app_name=try-it . /tmp/try-it && cd /tmp/t
 npm install
 npm run dev                             # the SDK stays off locally (the image turns it on)
 curl http://localhost:8080/healthz      # web
-npm run check                           # type-check, as CI does
+npm run check                           # type-check without writing JavaScript
 npm run build && npm test               # the tests run against the built app
 ```
 
@@ -71,7 +71,11 @@ To see telemetry locally, `npm run build`, then `OTEL_TRACES_EXPORTER=console no
 
 ## Checks and dependency updates
 
-Every pull request and every push to `main` of an app runs the same checks, from the workflow shared by every app: its `.github/workflows/container.yml` calls the template's [`app.yml`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/.github/workflows/app.yml), so Renovate proposes updates to its pinned workflow version. The checks: type-check, `npm test`, an image build, and a smoke test that starts the image the way the cluster does (read-only root filesystem, only `/tmp` writable, and `/data` with a database), read from the app's `swhurl.yaml`: a web app must answer its health path within 120 s (the platform's start-up allowance) and then `/`, and every app must stay up. SQLite images must apply migrations, write events, then preserve those rows and write again after a container restart using the same data directory. Only `main` pushes the image.
+Every pull request and every push to `main` of an app runs the same checks, from the workflow shared by every app: its `.github/workflows/container.yml` calls the template's [`app.yml`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/.github/workflows/app.yml), so Renovate proposes updates to its pinned workflow version. Docker compiles and type-checks once with `npm run build`, then runs `npm test --if-present` against that JavaScript. The `checked-runtime` target copies the tested output into the production image; a compilation or test failure stops the image build. Development dependencies, tests and their fixtures stay in the build stages. Dependency installation remains separately cached ahead of the source files.
+
+CI then smoke-tests the image the way the cluster runs it (read-only root filesystem, only `/tmp` writable, and `/data` with a database), read from the app's `swhurl.yaml`: a web app must answer its health path within 120 s (the platform's start-up allowance) and then `/`, and every app must stay up. SQLite images must apply migrations, write events, then preserve those rows and write again after a container restart using the same data directory. Only `main` pushes the image.
+
+The generated Container workflow sets `checks-in-image: true` and selects `checked-runtime` explicitly. Existing apps adopt the Dockerfile and this input together through a reviewed Copier update. Updating only the shared workflow version keeps the older runner checks by default. Enabling the input with an older Dockerfile fails because its required target is absent. `npm run check` remains available for local type-checking without emitting JavaScript.
 
 [Renovate](https://docs.renovatebot.com/) opens the update pull requests. `renovate.json` extends the template's shared [`renovate-preset.json`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/renovate-preset.json), so rule changes there reach every app:
 

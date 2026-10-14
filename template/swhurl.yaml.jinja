@@ -25,3 +25,13 @@ provides:
   eventsFile: asyncapi.yaml
 {%- endif %}
 {%- endif %}
+{%- if flags == 'example' %}
+# Feature flags: typed, with a value per environment; the build generates src/flags.ts from them.
+# https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#feature-flags
+flags:
+  shout:
+    type: boolean
+    description: Say hello in capitals
+    default: false
+    staging: true
+{%- endif %}

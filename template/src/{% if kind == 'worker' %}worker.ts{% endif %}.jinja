@@ -4,6 +4,9 @@ import { closeEvents, declaredSubscriptions, {% if events == 'asyncapi' %}publis
 {%- if database == 'sqlite' %}
 import { openDatabase } from "./db.js";
 {%- endif %}
+{%- if flags == 'example' %}
+import { flags } from "./flags.js";
+{%- endif %}
 
 // A background worker: no web address. It does one unit of work every WORK_INTERVAL_MS
 // (default a minute); replace work() with the app's job. The platform restarts it if it exits.
@@ -31,7 +34,12 @@ async function work(): Promise<void> {
       // apps find it and subscribe. Off the platform the payload is still checked, and nothing is sent.
       await publish("worked", { at: new Date().toISOString() });
 {%- endif %}
+{%- if flags == 'example' %}
+      // An example of a feature flag: shout is declared in swhurl.yaml, on in staging only.
+      logger.info({ trace_id: span.spanContext().traceId }, flags.shout ? "WORK DONE" : "work done");
+{%- else %}
       logger.info({ trace_id: span.spanContext().traceId }, "work done");
+{%- endif %}
     } catch (error) {
       logger.error({ err: error }, "work failed");
       span.recordException(error as Error);

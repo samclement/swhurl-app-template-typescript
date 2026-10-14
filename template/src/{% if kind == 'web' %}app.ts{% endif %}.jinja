@@ -6,9 +6,7 @@ import pino from "pino";
 import { openDatabase } from "./db.js";
 {%- endif %}
 import { {% if events != 'asyncapi' %}declaredPublishes, {% endif %}publish } from "./events.js";
-{%- if flags == 'example' %}
-import { flags } from "./flags.js";
-{%- endif %}
+import { {% if flags == 'example' %}flags, {% endif %}flagsLoaded } from "./flags.js";
 import { type Caller, Unauthorized, identify, notify, service } from "./platform.js";
 
 export const logger = pino({
@@ -31,8 +29,10 @@ app.onError((error, c) => {
   return c.json({ error: "internal error" }, 500);
 });
 
-// What the platform probes: no caller check, no log line.
+// What the platform probes: no caller check, no log line. Not ready until the app's feature flag
+// overrides have arrived (at most 5 s; src/flagstore.ts).
 app.get("/healthz", (c) => {
+  if (!flagsLoaded()) return c.json({ ok: false, waiting: "feature flag overrides" }, 503);
 {%- if database == 'sqlite' %}
   db.prepare("SELECT 1").get(); // ready only when the database answers
 {%- endif %}

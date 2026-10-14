@@ -58,3 +58,25 @@ test("a flag that does not fit its type is refused", () => {
   }
   for (const [name, flag] of Object.entries(declared)) assert.equal(problem(name, flag), "");
 });
+
+test("an override from the console wins until it is cleared, and must fit the declaration", () => {
+  const store = flagStore(declared, "prod", "orders");
+  assert.equal(store.apply("new-checkout", true), "");
+  assert.equal(store.value("new-checkout"), true);
+  assert.equal(store.apply("new-checkout", undefined), "");
+  assert.equal(store.value("new-checkout"), false, "cleared: back to the declared value");
+  assert.match(store.apply("new-checkout", "yes"), /new-checkout is not a boolean: ignored/);
+  assert.match(store.apply("max-basket-items", 1.5), /not an integer/);
+  assert.match(store.apply("max-basket-items", 500), /outside min and max/);
+  assert.match(store.apply("banner", "loud"), /not one of none, sale/);
+  assert.match(store.apply("gone", true), /gone, which swhurl.yaml does not declare/);
+  assert.equal(store.value("max-basket-items"), 10, "an ignored override changes nothing");
+  assert.equal(store.apply("banner", "sale"), "");
+  assert.equal(store.value("banner"), "sale");
+});
+
+test("off the platform there is nothing to watch and the app is ready at once", () => {
+  const store = flagStore(declared, undefined, undefined);
+  store.watch();
+  assert.equal(store.loaded(), true);
+});

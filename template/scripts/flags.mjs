@@ -65,14 +65,19 @@ export function generate(declaration) {
   return [
     "// Generated from the flags in swhurl.yaml by scripts/flags.mjs: edit swhurl.yaml, not this file.",
     "// https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#feature-flags",
-    'import { flagStore } from "./flagstore.js";',
+    'import { type WatchHooks, flagStore } from "./flagstore.js";',
     "",
     `const store = flagStore(${JSON.stringify(flags, null, 2)});`,
     "",
-    "/** This app's feature flags: each is the value swhurl.yaml declares for this environment. */",
+    "/** This app's feature flags: an override from the console, else the value swhurl.yaml declares for this environment. */",
     "export const flags = {",
     ...accessors,
     "};",
+    "",
+    "/** Watch this app's overrides on the platform (src/server.ts or src/worker.ts starts it). */",
+    "export const watchFlags = (hooks?: WatchHooks): void => store.watch(hooks);",
+    "/** Whether the stored overrides have arrived: /healthz reports not ready until then (at most 5 s). */",
+    "export const flagsLoaded = (): boolean => store.loaded();",
     "",
   ].join("\n");
 }

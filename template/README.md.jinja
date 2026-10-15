@@ -17,7 +17,7 @@ A background worker with no web address: `src/worker.ts` runs `work()` every `WO
 {% if kind == 'web' %}
 - **Who is calling.** `identify(headers)` returns `{ type: "app", id: "<app>" }` for another app that sent a token the platform issued for this app alone, `{ type: "user", id: "<email>" }` for a signed-in person, or `anonymous`. A bad token throws `Unauthorized`, which `src/app.ts` answers with 401. Every log line and span carries `caller.type` and `caller.id`. For a route only apps may use, call `requireApp(caller)`.
 {%- endif %}
-- **Calling another app.** Add `calls: [orders]` to `swhurl.yaml` before the app is created (afterwards: `make app-calls` on the platform, or the app page's **Calls** form). Then `await service("orders").fetch("/path")` reaches the same environment's `orders` with this app's token for it; the callee's spans join the same trace.{% if kind == 'web' %} `GET /call/orders` in `src/app.ts` is an example to replace.{% endif %}
+- **Calling another app.** A call is granted on the platform, not in this repository: tick `orders` under **Connections** when creating the app, or later use the app page's **Connect to an app** or `make app-calls`. Then `await service("orders").fetch("/path")` reaches the same environment's `orders` with this app's token for it; the callee's spans join the same trace.{% if kind == 'web' %} `GET /call/orders` in `src/app.ts` is an example to replace.{% endif %}
 
 ## Notifications
 
@@ -36,13 +36,14 @@ Every build, type-check, test and `npm run dev` first runs `scripts/flags.mjs`, 
 
 ## Events
 
-`src/events.ts` publishes and receives events on the platform's NATS ([events](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#events)). Declare them in `swhurl.yaml` before the app is created (afterwards: `make app-events` on the platform):
+`src/events.ts` publishes and receives events on the platform's NATS ([events](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#events)). What it publishes is an offer: declare it in `swhurl.yaml` before the app is created (afterwards: `make app-events` on the platform){% if events == 'asyncapi' %}, or, as this app does, in `asyncapi.yaml`{% endif %}:
 
 ```yaml
 events:
   publish: [created]               # other apps see {{ app_name }}.created
-  subscribe: [orders.created]      # <app>.<event>
 ```
+
+What it receives is a grant, set on the platform: tick `orders.created` under **Connections** when creating the app, or later use the app page's **Connect to an app** or `make app-events ARGS="--add-subscribe orders.created"`.
 
 Then `await publish("created", data)` and `await subscribe("orders.created", async (event) => { ... })`. An event is a CloudEvents envelope (`event.data` is what was published); a handler runs inside the publisher's trace, and if it throws the event comes back, five tries in all. {% if events == 'asyncapi' %}{% if kind == 'web' %}`src/app.ts` publishes `visited` on every request to `/`{% else %}`src/worker.ts` publishes `worked` after every run{% endif %} and logs every event it subscribes to{% elif kind == 'web' %}`src/app.ts` publishes the first declared event on every request to `/` and `src/server.ts` logs every event it subscribes to{% else %}`src/worker.ts` logs every event it subscribes to{% endif %}: examples to replace. `subscribe` keeps trying until it is receiving, since a new app can start before NATS knows it. Locally there is no NATS: `publish` returns `null` and `subscribe` never calls back.
 

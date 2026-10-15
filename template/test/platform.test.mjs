@@ -94,7 +94,7 @@ test("service() sends this app's token for the callee to its address", async (t)
     { path: "/stock/42", authorization: "Bearer first" },
     { path: "/stock/43", authorization: "Bearer second" },
   ]);
-  assert.throws(() => service("inventory"), /SWHURL_SERVICE_INVENTORY_URL is not set: declare the call/);
+  assert.throws(() => service("inventory"), /SWHURL_SERVICE_INVENTORY_URL is not set: grant the call/);
 });
 
 test("notify() posts the message with this app's token for the notify service and never throws", async (t) => {

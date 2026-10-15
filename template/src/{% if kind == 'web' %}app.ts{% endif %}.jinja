@@ -69,7 +69,7 @@ app.use(async (c, next) => {
 });
 
 // An example of calling another app: GET /call/orders asks the app "orders" for its "/" and
-// returns what it said. It works once this app declares the call (calls: [orders] in swhurl.yaml).
+// returns what it said. It works once the platform grants this app the call (make app-calls).
 app.get("/call/:name", async (c) => {
   const name = c.req.param("name");
   try {

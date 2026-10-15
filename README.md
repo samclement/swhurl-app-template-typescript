@@ -32,7 +32,7 @@ Shared by every app and kept at the top level: [`.github/workflows/app.yml`](.gi
 
 ## The contract with the platform
 
-[`swhurl.yaml`](swhurl.yaml) tells the platform what this app needs: the kind, port, health path, user, telemetry and, when used, a database and secret names. The platform's `make app-new --from-repo <owner>/<app>` reads it, so keep it true when you change any of these; its fields are listed in the platform's [apps guide](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#swhurlyaml).
+[`swhurl.yaml`](template/swhurl.yaml.jinja) tells the platform what this app is, what its image needs and what it offers, under one comment per kind: its identity (`version`, `stack`, `kind`); its needs (port, health path, user, telemetry and, when used, a database and secret names); its offers (its API and events documents, feature flags). Keep it true when you change any of these; each field's kind is listed in the platform's [apps guide](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#swhurlyaml). What the platform allows the app (its grants: team, who can reach it, the apps it calls, the events it receives, alerts) is never in it: it is set on the platform.
 
 What the image provides (keep these true, and update `swhurl.yaml` with them):
 
@@ -46,9 +46,9 @@ What the image provides (keep these true, and update `swhurl.yaml` with them):
 | Logs | JSON on stdout (`pino`) | `src/app.ts`, `src/worker.ts` |
 | Image tags | `<run number>-<short sha>`, never `latest` | the shared [`app.yml`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/.github/workflows/app.yml) |
 
-Every app also gets `src/platform.ts`: `identify()` tells a web app whether a request comes from another app (a platform-issued token for this app alone), a signed-in person or nobody, and `service("name")` calls an app declared under `calls:` in `swhurl.yaml` with this app's token for it ([calling another app](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#calling-another-app)). It uses Node's own `crypto`, so it adds no dependency.
+Every app also gets `src/platform.ts`: `identify()` tells a web app whether a request comes from another app (a platform-issued token for this app alone), a signed-in person or nobody, and `service("name")` calls an app this one has been granted a call to on the platform, with this app's token for it ([calling another app](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#calling-another-app)). It uses Node's own `crypto`, so it adds no dependency.
 
-`src/events.ts` does the same for [events](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#events): `publish("created", data)` and `subscribe("orders.created", handler)` for the events declared under `events:` in `swhurl.yaml`, over NATS JetStream with the app's own key, as CloudEvents carrying the trace. It is the one runtime dependency this adds (`nats`), loaded only when an app uses events.
+`src/events.ts` does the same for [events](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#events): `publish("created", data)` and `subscribe("orders.created", handler)` for the events it publishes (declared in `swhurl.yaml` or `asyncapi.yaml`) and has been granted to receive, over NATS JetStream with the app's own key, as CloudEvents carrying the trace. It is the one runtime dependency this adds (`nats`), loaded only when an app uses events.
 
 What the platform injects (the preset's `--otlp`): `OTEL_EXPORTER_OTLP_ENDPOINT` (the collector on the pod's node), `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` and `OTEL_SERVICE_NAME` (the app name). Nothing in this repository names the cluster; the platform owns the Kubernetes manifests.
 

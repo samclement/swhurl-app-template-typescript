@@ -84,6 +84,19 @@ export function requireApp(caller: Caller): string {
 }
 
 /**
+ * A secret this app reads: list its name in swhurl.yaml's secrets, and set its value on the platform. A name
+ * listed without a value deploys all the same, so the code that needs it fails here, saying how to set it.
+ */
+export function secret(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    const where = `APP=${process.env.SWHURL_APP ?? "<app>"} ENV=${process.env.SWHURL_ENV ?? "<env>"}`;
+    throw new Error(`secret ${name} has no value: set it on the platform (make app-secret ${where} NAME=${name}) and list it in swhurl.yaml's secrets`);
+  }
+  return value;
+}
+
+/**
  * Another app this one has been granted a call to (Connect to an app, or make app-calls). fetch() sends the request to
  * the same environment's instance with this app's token for it; trace headers are added by the
  * OpenTelemetry instrumentation, so the callee's spans join this request's trace.

@@ -7,7 +7,7 @@ import http from "node:http";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Unauthorized, identify, notify, requireApp, service } from "../dist/platform.js";
+import { Unauthorized, identify, notify, requireApp, secret, service } from "../dist/platform.js";
 
 const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const ISSUER = "https://kubernetes.default.svc.cluster.local";
@@ -138,4 +138,11 @@ test("notify() posts the message with this app's token for the notify service an
   process.env.SWHURL_NOTIFY_URL = "http://127.0.0.1:1";
   assert.equal(await notify("Order backlog"), false, "an unreachable service is a warning, not an exception");
   assert.equal(warnings.length, 2);
+});
+
+test("secret() returns a value, and names the command for a missing one", () => {
+  process.env.EXAMPLE_TOKEN = "t0ken";
+  assert.equal(secret("EXAMPLE_TOKEN"), "t0ken");
+  delete process.env.EXAMPLE_TOKEN;
+  assert.throws(() => secret("EXAMPLE_TOKEN"), /secret EXAMPLE_TOKEN has no value: set it on the platform \(make app-secret APP=orders ENV=\w+ NAME=EXAMPLE_TOKEN\)/);
 });

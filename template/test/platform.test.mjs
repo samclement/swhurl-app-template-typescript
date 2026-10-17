@@ -7,7 +7,7 @@ import http from "node:http";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Unauthorized, identify, notify, requireApp, secret, service } from "../dist/platform.js";
+import { Unauthorized, identify, notify, personOf, requireApp, secret, service } from "../dist/platform.js";
 
 const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const ISSUER = "https://kubernetes.default.svc.cluster.local";
@@ -43,6 +43,26 @@ test("a request without a token is a signed-in person or anonymous", () => {
   assert.throws(() => requireApp(identify({})), Unauthorized);
 });
 
+test("an app's token may name the signed-in person it is calling for", () => {
+  const user = { "x-swhurl-user": "sam@example.com" };
+  assert.deepEqual(identify({ ...bearer(token()), ...user }), { type: "app", id: "reports", user: "sam@example.com" });
+  assert.deepEqual(identify({ ...bearer(token()), "x-swhurl-user": "" }), { type: "app", id: "reports" });
+  for (const bad of ["not an email", "sam@example.com\nx", `${"a".repeat(250)}@example.com`]) {
+    assert.throws(() => identify({ ...bearer(token()), "x-swhurl-user": bad }), /x-swhurl-user is not an email address/, bad);
+  }
+  assert.throws(() => identify({ ...bearer(token({ aud: ["inventory"] })), ...user }), Unauthorized, "a bad token stays refused");
+  assert.deepEqual(identify(user), { type: "anonymous", id: null }, "without a token nobody can claim a person");
+  assert.deepEqual(identify({ ...user, "x-auth-request-email": "ann@example.com" }), { type: "user", id: "ann@example.com" });
+});
+
+test("personOf() is the person behind a caller", () => {
+  assert.equal(personOf({ type: "user", id: "sam@example.com" }), "sam@example.com");
+  assert.equal(personOf({ type: "app", id: "shop", user: "sam@example.com" }), "sam@example.com");
+  assert.equal(personOf({ type: "app", id: "shop" }), undefined);
+  assert.equal(personOf({ type: "anonymous", id: null }), undefined);
+  assert.equal(personOf(undefined), undefined);
+});
+
 test("every other token is refused", () => {
   const other = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
   const cases = {
@@ -76,7 +96,7 @@ test("without the platform's keys a token cannot be accepted", () => {
 test("service() sends this app's token for the callee to its address", async (t) => {
   const seen = [];
   const callee = http.createServer((request, response) => {
-    seen.push({ path: request.url, authorization: request.headers.authorization });
+    seen.push({ path: request.url, authorization: request.headers.authorization, user: request.headers["x-swhurl-user"] });
     response.end("{}");
   });
   await new Promise((resolve) => callee.listen(0, "127.0.0.1", resolve));
@@ -89,10 +109,14 @@ test("service() sends this app's token for the callee to its address", async (t)
 
   await service("orders-api").fetch("/stock/42");
   writeFileSync(join(tokens, "orders-api", "token"), "second\n"); // the platform replaces the file
-  await service("orders-api").fetch("/stock/43");
+  await service("orders-api").fetch("/stock/43", { onBehalfOf: { type: "user", id: "sam@example.com" } });
+  await service("orders-api").fetch("/stock/44", { onBehalfOf: { type: "app", id: "shop", user: "ann@example.com" } });
+  await service("orders-api").fetch("/stock/45", { onBehalfOf: { type: "anonymous", id: null }, headers: { "x-swhurl-user": "forged@example.com" } });
   assert.deepEqual(seen, [
-    { path: "/stock/42", authorization: "Bearer first" },
-    { path: "/stock/43", authorization: "Bearer second" },
+    { path: "/stock/42", authorization: "Bearer first", user: undefined },
+    { path: "/stock/43", authorization: "Bearer second", user: "sam@example.com" },
+    { path: "/stock/44", authorization: "Bearer second", user: "ann@example.com" },
+    { path: "/stock/45", authorization: "Bearer second", user: undefined },
   ]);
   assert.throws(() => service("inventory"), /SWHURL_SERVICE_INVENTORY_URL is not set: grant the call/);
 });

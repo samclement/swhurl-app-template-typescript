@@ -14,6 +14,14 @@ export const logger = pino({
 });
 
 const serviceName = process.env.OTEL_SERVICE_NAME ?? "swhurl-app";
+{%- if api == 'openapi' %}
+// Who this app is, as the platform names and describes it (SWHURL_APP; SWHURL_DESCRIPTION, from
+// swhurl.yaml), or as it was created off the platform: an image built for another app says the right thing.
+const identity = () => ({
+  name: process.env.SWHURL_APP || {{ app_name | tojson }},
+  description: process.env.SWHURL_DESCRIPTION || {{ description | tojson }},
+});
+{%- endif %}
 {%- if database == 'sqlite' %}
 // DATABASE_PATH comes from the platform (a file on a volume that outlives the pod); app.db locally.
 export const db = openDatabase();
@@ -138,7 +146,7 @@ async function hello(caller: Caller) {
 // A described route: the schemas below are what the handler must return and what openapi.json says.
 // Add routes the same way and run `npm run openapi`; CI fails if openapi.json is out of date.
 const Hello = z.object({
-  message: z.string().openapi({ example: "hello from {{ app_name }}" }),
+  message: z.string().openapi({ example: `hello from ${identity().name}` }),
   service: z.string(),
   caller: z.object({
     type: z.enum(["app", "user", "anonymous"]),
@@ -163,7 +171,7 @@ app.openapi(
 /** What this app offers other apps: generated from the routes above, served and kept in openapi.json. */
 export const openapi = () => app.getOpenAPI31Document({
   openapi: "3.1.0",
-  info: { title: {{ app_name | tojson }}, version: "0.1.0", description: {{ description | tojson }} },
+  info: { title: identity().name, version: "0.1.0", description: identity().description },
 });
 app.get("/openapi.json", (c) => c.json(openapi()));
 {%- else %}

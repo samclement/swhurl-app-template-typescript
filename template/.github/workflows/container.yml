@@ -16,7 +16,11 @@ permissions:
 
 jobs:
   app:
-    uses: samclement/swhurl-app-template-typescript/.github/workflows/app.yml@v0.2.14
+<<<<<<< HEAD
+    uses: samclement/swhurl-app-template-typescript/.github/workflows/app.yml@v0.2.15
+=======
+    uses: samclement/swhurl-app-template-typescript/.github/workflows/app.yml@v0.2.15
+>>>>>>> b6cc71b (A seed image for every tested set of answers, so each app type starts from one)
     with:
       checks-in-image: true
       reuse-pr-image: true

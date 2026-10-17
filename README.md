@@ -13,6 +13,8 @@ make app-repo NAME=<app> ANSWERS="kind=web database=sqlite"   # creates samcleme
 
 Either way you get the public repository `samclement/<app>` and, once its pull request is merged, a staging instance ([start a new app](https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#start-a-new-app)). From then on every push to `main` reaches staging on its own: the workflow publishes `<run>-<sha>`, the platform's image automation commits the new tag and digest to the staging instance, and Flux deploys it. Promote to production from the console (**Promote to production**) or with `make app-promote`.
 
+**A new app with the default answers starts on a seed image.** Its first run's `seed` job copies the image the template's own CI built and smoke-tested for the same answers and revision (`ghcr.io/samclement/swhurl-app-template-typescript:seed-<template commit>`) to `<app>:0-<sha>`, in seconds, so the platform deploys the app without waiting for the build. With the defaults the code is the template's own (the app's name reaches only the README and the answers file; the platform sets it at runtime). The same run's build publishes `1-<sha>`, which image automation deploys next. Other answers have no seed: the build is the first image.
+
 The cluster pulls images anonymously, so the package must be public. A package published from a public repository has been public so far (checked 30 September 2026); if the pod reports an image pull error, open the repository's package (**Packages** on the right) → **Package settings** → **Change visibility** → Public.
 
 ## How this repository is laid out

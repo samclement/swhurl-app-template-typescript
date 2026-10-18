@@ -19,24 +19,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The defaults, each other choice of the template's questions (copier.yml) on its own, and all of
-        # them together for each kind: this grows with the number of choices, not with their product.
-        # The platform's make check-templates still renders every combination (it builds nothing).
+        # The platform's app types (swhurl-platform contract.APP_TYPES): the only answers copier.yml accepts.
+        # Each is built, smoke-tested and, on main, published as new apps' seed. Keep the first entry first:
+        # app.yml's OCI export proof runs for it.
         answers:
-          - kind=web database=none api=none events=none flags=none frontend=none
-          - kind=worker database=none api=none events=none flags=none frontend=none
-          - kind=web database=sqlite api=none events=none flags=none frontend=none
-          - kind=web database=none api=openapi events=none flags=none frontend=none
-          - kind=web database=none api=none events=asyncapi flags=none frontend=none
-          - kind=web database=none api=none events=none flags=example frontend=none
-          - kind=web database=sqlite api=openapi events=asyncapi flags=example frontend=none
-          - kind=worker database=sqlite api=none events=asyncapi flags=example frontend=none
-          # The platform's app types (swhurl-platform contract.APP_TYPES) not already above: each is a seed.
-          - kind=worker database=none api=none events=asyncapi flags=example frontend=none
-          - kind=web database=none api=none events=none flags=none frontend=vite
-          - kind=web database=sqlite api=openapi events=asyncapi flags=example frontend=vite
-          - kind=job database=none api=none events=none flags=none frontend=none
-          - kind=job database=none api=none events=asyncapi flags=example frontend=none
+          - kind=web database=sqlite api=openapi frontend=none     # api
+          - kind=web database=sqlite api=openapi frontend=vite     # web-app
+          - kind=worker database=none api=none frontend=none       # worker
+          - kind=job database=none api=none frontend=none          # scheduled-job
     uses: ./.github/workflows/app.yml
     with:
       template: true

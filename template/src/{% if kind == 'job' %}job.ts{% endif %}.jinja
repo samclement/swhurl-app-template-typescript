@@ -3,8 +3,8 @@
 // a failed one, which the platform reports to the team. Replace work() with the app's job.
 import { SpanStatusCode, trace } from "@opentelemetry/api";
 import pino from "pino";
-import { closeEvents{% if events == 'asyncapi' %}, publish{% endif %} } from "./events.js";
-import { {% if flags == 'example' %}flags, {% endif %}flagsLoaded, watchFlags } from "./flags.js";
+import { closeEvents, publish } from "./events.js";
+import { flags, flagsLoaded, watchFlags } from "./flags.js";
 
 export const logger = pino({
   level: process.env.LOG_LEVEL ?? "info",
@@ -17,21 +17,13 @@ const STOP_AFTER_MS = 30_000; // after the run: time to send telemetry and close
 
 /** The job itself: throw to fail the run. */
 async function work(): Promise<void> {
-{%- if flags == 'example' %}
   // An example of a feature flag: fail-run is declared in swhurl.yaml, off everywhere. Turn it on for
   // an environment on the app page to see a failed run reported; turn it off again afterwards.
   if (flags.failRun) throw new Error("fail-run is on: this run fails on purpose");
-{%- endif %}
-{%- if events == 'asyncapi' %}
   // An example of publishing: "worked" is described in asyncapi.yaml, which is what lets other
   // apps find it and subscribe. Off the platform the payload is still checked, and nothing is sent.
   await publish("worked", { at: new Date().toISOString() });
-{%- endif %}
-{%- if flags == 'example' %}
   logger.info(flags.shout ? "WORK DONE" : "work done");
-{%- else %}
-  logger.info("work done");
-{%- endif %}
 }
 
 /** One run of ``job`` inside a root span "run": the exit status it should end with, 0 or 1. */

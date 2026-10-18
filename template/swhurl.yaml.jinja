@@ -19,27 +19,24 @@ telemetry: otlp
 database: sqlite
 {%- endif %}
 {%- set listed_api = kind == 'web' and api == 'openapi' and frontend != 'vite' %}
-{%- if listed_api or events == 'asyncapi' or flags == 'example' %}
 
 # Offers: what other apps can use
-{%- endif %}
 {%- if kind == 'web' and api == 'openapi' and frontend == 'vite' %}
 # Its API (/api/*) serves its own browser frontend, so it is not offered to other apps: openapi.json
 # stays in the repository to type its calls. Add provides.api and apiFile to offer it.
 {%- endif %}
-{%- if listed_api or events == 'asyncapi' %}
+{%- if listed_api %}
 # Its API description (served, and kept in the repository) and its events. The platform reads both
 # files for every image; the events file says what the app publishes.
+{%- else %}
+# Its events: the platform reads asyncapi.yaml for every image; it says what the app publishes.
+{%- endif %}
 provides:
 {%- if listed_api %}
   api: /openapi.json
   apiFile: openapi.json
 {%- endif %}
-{%- if events == 'asyncapi' %}
   eventsFile: asyncapi.yaml
-{%- endif %}
-{%- endif %}
-{%- if flags == 'example' %}
 # Feature flags: typed, with a value per environment; the build generates src/flags.ts from them.
 # https://github.com/samclement/swhurl-platform/blob/main/docs/apps.md#feature-flags
 flags:
@@ -53,7 +50,6 @@ flags:
     type: boolean
     description: Make the example run fail, to see a failed run reported
     default: false
-{%- endif %}
 {%- endif %}
 
 # Grants are set on the platform, not here: the team, who can reach the app, the apps it calls, the

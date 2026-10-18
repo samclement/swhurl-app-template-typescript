@@ -35,6 +35,8 @@ jobs:
           - kind=worker database=none api=none events=asyncapi flags=example frontend=none
           - kind=web database=none api=none events=none flags=none frontend=vite
           - kind=web database=sqlite api=openapi events=asyncapi flags=example frontend=vite
+          - kind=job database=none api=none events=none flags=none frontend=none
+          - kind=job database=none api=none events=asyncapi flags=example frontend=none
     uses: ./.github/workflows/app.yml
     with:
       template: true

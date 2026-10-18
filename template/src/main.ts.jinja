@@ -1,2 +1,9 @@
+{% if kind == 'job' -%}
+// The entry point: one run of a scheduled job (job.ts), which ends the process when it is done.
+import { main } from "./job.js";
+
+await main();
+{%- else -%}
 // The entry point: {% if kind == 'web' %}an HTTP service (server.ts){% else %}a background worker (worker.ts){% endif %}.
 import "./{{ 'server' if kind == 'web' else 'worker' }}.js";
+{%- endif %}

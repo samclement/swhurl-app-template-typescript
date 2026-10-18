@@ -1,0 +1,23 @@
+// Runs the built job (npm run build first): one run, then the process ends with its status.
+// Uses only Node's built-in test runner.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+
+test("a run does its work and the process exits 0", async (t) => {
+  const job = spawn(process.execPath, ["dist/main.js"], { stdio: ["ignore", "pipe", "inherit"] });
+  t.after(() => { if (job.exitCode === null) job.kill("SIGKILL"); });
+  let output = "";
+  job.stdout.on("data", (chunk) => (output += chunk));
+  const [code] = await once(job, "exit");
+  assert.equal(code, 0, output);
+  assert.match(output, /work done/i);
+  assert.match(output, /run succeeded/);
+});
+
+test("a run that throws is a failed run: status 1, an error span and log line", async () => {
+  const { runOnce } = await import("../dist/job.js");
+  assert.equal(await runOnce(async () => {}), 0);
+  assert.equal(await runOnce(async () => { throw new Error("broken on purpose"); }), 1);
+});

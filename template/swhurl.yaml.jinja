@@ -18,15 +18,20 @@ telemetry: otlp
 {%- if database == 'sqlite' %}
 database: sqlite
 {%- endif %}
-{%- if kind == 'web' and api == 'openapi' or events == 'asyncapi' or flags == 'example' %}
+{%- set listed_api = kind == 'web' and api == 'openapi' and frontend != 'vite' %}
+{%- if listed_api or events == 'asyncapi' or flags == 'example' %}
 
 # Offers: what other apps can use
 {%- endif %}
-{%- if kind == 'web' and api == 'openapi' or events == 'asyncapi' %}
+{%- if kind == 'web' and api == 'openapi' and frontend == 'vite' %}
+# Its API (/api/*) serves its own browser frontend, so it is not offered to other apps: openapi.json
+# stays in the repository to type its calls. Add provides.api and apiFile to offer it.
+{%- endif %}
+{%- if listed_api or events == 'asyncapi' %}
 # Its API description (served, and kept in the repository) and its events. The platform reads both
 # files for every image; the events file says what the app publishes.
 provides:
-{%- if kind == 'web' and api == 'openapi' %}
+{%- if listed_api %}
   api: /openapi.json
   apiFile: openapi.json
 {%- endif %}

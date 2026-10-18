@@ -1,12 +1,20 @@
+{%- set frontend_vite = frontend == 'vite' -%}
+{%- set prefix = '/api' if frontend_vite else '' -%}
 // The app's routes. src/server.ts listens with them{% if api == 'openapi' %}; src/openapi.ts writes their description to openapi.json{% endif %}.
+{%- if frontend_vite %}
+// The browser frontend (web/, built into public/) is served at /; its calls come to /api/*.
+{%- endif %}
 import { OpenAPIHono{% if api == 'openapi' %}, createRoute, z{% endif %} } from "@hono/zod-openapi";
+{%- if frontend_vite %}
+import { serveStatic } from "@hono/node-server/serve-static";
+{%- endif %}
 import { trace } from "@opentelemetry/api";
 import pino from "pino";
 {%- if database == 'sqlite' %}
 import { openDatabase } from "./db.js";
 {%- endif %}
 import { {% if events != 'asyncapi' %}declaredPublishes, {% endif %}publish } from "./events.js";
-import { {% if flags == 'example' %}flags, {% endif %}flagsLoaded } from "./flags.js";
+import { {% if flags == 'example' or frontend_vite %}flags, {% endif %}flagsLoaded } from "./flags.js";
 import { type Caller, Unauthorized, identify, notify, service } from "./platform.js";
 
 export const logger = pino({
@@ -79,10 +87,10 @@ app.use(async (c, next) => {
   }, "request handled");
 });
 
-// An example of calling another app: GET /call/orders asks the app "orders" for its "/" and
+// An example of calling another app: GET {{ prefix }}/call/orders asks the app "orders" for its "/" and
 // returns what it said. It works once the platform grants this app the call (make app-calls).
 // onBehalfOf tells orders who is signed in here, so its "/" names this app and that person.
-app.get("/call/:name", async (c) => {
+app.get("{{ prefix }}/call/:name", async (c) => {
   const name = c.req.param("name");
   try {
     const reply = await service(name).fetch("/", { onBehalfOf: c.get("caller") });
@@ -92,9 +100,9 @@ app.get("/call/:name", async (c) => {
   }
 });
 
-// An example of notifying the team: POST /notify sends a message to the notification channel of
+// An example of notifying the team: POST {{ prefix }}/notify sends a message to the notification channel of
 // the team that owns this app, and says whether the platform accepted it.
-app.post("/notify", async (c) => {
+app.post("{{ prefix }}/notify", async (c) => {
   const caller = c.get("caller");
   const sent = await notify("Hello from the example route", { message: `Asked for by ${caller.id ?? "an anonymous caller"}.` });
   return c.json({ sent });
@@ -161,7 +169,7 @@ const Hello = z.object({
 app.openapi(
   createRoute({
     method: "get",
-    path: "/",
+    path: "{{ prefix ~ '/hello' if frontend_vite else '/' }}",
     summary: "Say hello and name the caller",
     responses: { 200: { description: "A greeting", content: { "application/json": { schema: Hello } } } },
   }),
@@ -176,7 +184,15 @@ export const openapi = () => app.getOpenAPI31Document({
 app.get("/openapi.json", (c) => c.json(openapi()));
 {%- else %}
 
-app.get("/", async (c) => c.json(await hello(c.get("caller"))));
+app.get("{{ prefix ~ '/hello' if frontend_vite else '/' }}", async (c) => c.json(await hello(c.get("caller"))));
+{%- endif %}
+{%- if frontend_vite %}
+
+// The feature flags as this request sees them, for the browser frontend (web/main.ts).
+app.get("/api/flags", (c) => c.json(flags));
+
+// The browser frontend, built by Vite+ into public/ (npm run build in web/; the image does it).
+app.use("/*", serveStatic({ root: "./public" }));
 {%- endif %}
 
 app.notFound((c) => c.json({ error: "not found" }, 404));

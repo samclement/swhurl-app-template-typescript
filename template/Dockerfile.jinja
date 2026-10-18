@@ -4,6 +4,19 @@ COPY package.json package-lock.json ./
 ARG NPM_CONFIG_LOGLEVEL=warn
 RUN npm ci
 
+{%- if kind == 'web' and frontend == 'vite' %}
+
+# The browser frontend (web/): formatted, linted and type-checked, then built by Vite+ into /app/public.
+# Its own dependencies (Vite+) stay in this stage: the runtime image gets only the built files.
+FROM node:24-bookworm-slim AS web
+WORKDIR /app/web
+COPY web/package.json web/package-lock.json ./
+ARG NPM_CONFIG_LOGLEVEL=warn
+RUN npm ci
+COPY web ./
+RUN npm run check && npm run build
+{%- endif %}
+
 FROM deps AS build
 COPY tsconfig.json swhurl.yaml ./
 COPY scripts ./scripts
@@ -49,6 +62,9 @@ COPY --from=prod-deps --chown=65532:65532 /app/node_modules ./node_modules
 COPY --from=prod-deps --chown=65532:65532 /app/package.json ./package.json
 # Depending on the check stage makes a failing test stop the runtime image build.
 COPY --from=check --chown=65532:65532 /app/dist ./dist
+{%- if kind == 'web' and frontend == 'vite' %}
+COPY --from=web --chown=65532:65532 /app/public ./public
+{%- endif %}
 {%- if database == 'sqlite' %}
 COPY --chown=65532:65532 migrations ./migrations
 {%- endif %}

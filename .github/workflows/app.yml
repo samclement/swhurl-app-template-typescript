@@ -35,7 +35,7 @@ on:
 
 env:
   # The template's own CI publishes the image it built and smoke-tested for each set of answers in its
-  # Template workflow as seed-<commit>-<kind>-<database>-<api>-<events>-<flags> (the values in that
+  # Template workflow as seed-<commit>-<kind>-<database>-<api>-<events>-<flags>-<frontend> (the values in that
   # order); a new app's first run copies the one for its own answers (the seed job). The platform's app
   # types are among those sets. The image does not depend on the app's name: the platform gives it its
   # name and description at runtime.
@@ -62,7 +62,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
-          answers=$(for question in kind database api events flags; do
+          answers=$(for question in kind database api events flags frontend; do
             printf '%s=%s ' "$question" "$(sed -n "s/^$question: *//p" .copier-answers.yml | head -1)"
           done)
           answers=${answers% }
@@ -103,7 +103,7 @@ jobs:
     env:
       APP_DIR: ${{ inputs.template && 'app' || '.' }}
       PUBLISH: ${{ !inputs.template && github.event_name != 'pull_request' }}
-      CHECK_EXPORT: ${{ inputs.template && inputs.answers == 'kind=web database=none api=none events=none flags=none' }}  # the Template workflow's first matrix entry, exactly
+      CHECK_EXPORT: ${{ inputs.template && inputs.answers == 'kind=web database=none api=none events=none flags=none frontend=none' }}  # the Template workflow's first matrix entry, exactly
       REUSE_ENABLED: ${{ !inputs.template && inputs.reuse-pr-image && inputs.checks-in-image && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     defaults:
       run:
@@ -273,6 +273,8 @@ jobs:
           if [ "$kind" = web ]; then args+=(-p "18080:$port"); fi
           docker run -d --name smoke "${args[@]}" app:smoke
           SECONDS=0
+          example=/   # the example route, which writes to the database
+          if [ -f web/package.json ]; then example=/api/hello; fi   # a browser frontend is served at /, its API under /api
           if [ "$kind" = web ]; then
             path=$(field healthPath); path=${path:-/healthz}
             # Up to 120 s: the start-up allowance the platform gives every web app (its startup probe).
@@ -283,6 +285,7 @@ jobs:
             echo "answered $path after ${SECONDS} s of the 120 s allowed"
             curl -fsS "http://127.0.0.1:18080$path" >/dev/null || { docker logs smoke; exit 1; }
             curl -fsS http://127.0.0.1:18080/ >/dev/null || { docker logs smoke; exit 1; }
+            curl -fsS "http://127.0.0.1:18080$example" >/dev/null || { docker logs smoke; exit 1; }
           fi
           stays_running || { docker logs smoke; exit 1; }
           if [ "$database" = sqlite ]; then
@@ -308,6 +311,7 @@ jobs:
               done
               curl -fsS "http://127.0.0.1:18080$path" >/dev/null
               curl -fsS http://127.0.0.1:18080/ >/dev/null
+              curl -fsS "http://127.0.0.1:18080$example" >/dev/null
             fi
             stays_running || { docker logs smoke; exit 1; }
             docker stop smoke

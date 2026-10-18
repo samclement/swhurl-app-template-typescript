@@ -61,3 +61,11 @@ flags:
     none: none
     example: example
   default: none
+
+frontend:
+  type: str
+  help: "vite: a browser frontend in web/, built with Vite+ and served by the app at /; it calls the app's own /api/* as the signed-in person (web only)"
+  choices:
+    none: none
+    vite: vite
+  default: none

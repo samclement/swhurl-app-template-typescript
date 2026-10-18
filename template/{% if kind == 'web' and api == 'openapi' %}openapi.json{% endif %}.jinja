@@ -86,7 +86,7 @@
     "parameters": {}
   },
   "paths": {
-    "/": {
+    {{ ('/api/hello' if frontend == 'vite' else '/') | tojson }}: {
       "get": {
         "summary": "Say hello and name the caller",
         "responses": {

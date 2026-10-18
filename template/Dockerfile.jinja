@@ -15,8 +15,8 @@ ARG NPM_CONFIG_LOGLEVEL=warn
 RUN npm ci
 COPY web ./
 RUN npm run check && npm run build
+{%- endif %}
 
-{% endif -%}
 FROM deps AS build
 COPY tsconfig.json swhurl.yaml ./
 COPY scripts ./scripts

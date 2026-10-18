@@ -13,8 +13,8 @@ import pino from "pino";
 {%- if database == 'sqlite' %}
 import { openDatabase } from "./db.js";
 {%- endif %}
-import { {% if events != 'asyncapi' %}declaredPublishes, {% endif %}publish } from "./events.js";
-import { {% if flags == 'example' or frontend_vite %}flags, {% endif %}flagsLoaded } from "./flags.js";
+import { publish } from "./events.js";
+import { flags, flagsLoaded } from "./flags.js";
 import { type Caller, Unauthorized, identify, notify, service } from "./platform.js";
 
 export const logger = pino({
@@ -114,15 +114,9 @@ async function hello(caller: Caller) {
   recordVisit.run("/", new Date().toISOString());
   const visits = Number((countVisits.get() as { n: number }).n);
 {%- endif %}
-{%- if events == 'asyncapi' %}
   // An example of publishing: "visited" is described in asyncapi.yaml, which is what lets other
   // apps find it and subscribe. Off the platform the payload is still checked, and nothing is sent.
   const published = "visited";
-{%- else %}
-  // An example of publishing: the first event this app declares (events.publish in swhurl.yaml)
-  // goes out on every request. Off the platform, or with nothing declared, nothing happens.
-  const [published] = declaredPublishes();
-{%- endif %}
   let eventId: string | null = null;
   if (published) {
     try {
@@ -131,13 +125,9 @@ async function hello(caller: Caller) {
       logger.error({ err: error, event: published, trace_id: traceId() }, "event not published");
     }
   }
-{%- if flags == 'example' %}
   // An example of a feature flag: shout is declared in swhurl.yaml, on in staging only.
   const greeting = `hello from ${serviceName}`;
   const message = flags.shout ? greeting.toUpperCase() : greeting;
-{%- else %}
-  const message = `hello from ${serviceName}`;
-{%- endif %}
   return {
     message,
     service: serviceName,

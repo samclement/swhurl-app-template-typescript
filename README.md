@@ -90,6 +90,8 @@ The generated Container workflow sets `checks-in-image: true` and selects `check
 
 The run that publishes an image builds, tests and smoke-tests it itself, so the tag and the image's `org.opencontainers.image.revision` label name the same commit; a PR image is never republished, and the generated caller grants only `contents: read` and `packages: write`.
 
+The workflow builds the platform's Go declaration producer from an immutable platform revision, using that module's pinned Go version and dependency checksums. Its source and binary stay outside the app's Docker context. `swhurl-v2 image-declaration --app-dir .` reads `swhurl.yaml` and the documents it names; a refusal stops the build before publication, without a Python fallback. Template CI checks the image's version-2 declaration, minimum memory and exact API/events/flags document bytes. uv/Python remains for template-only Copier rendering, and the runner's Python standard library for smoke-test assertions; ordinary app declaration production needs neither uv nor PyYAML.
+
 [Renovate](https://docs.renovatebot.com/) opens the update pull requests. `renovate.json` extends the template's shared [`renovate-preset.json`](https://github.com/samclement/swhurl-app-template-typescript/blob/main/renovate-preset.json), so rule changes there reach every app:
 
 | Update | What happens |
